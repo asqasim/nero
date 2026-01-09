@@ -13,3 +13,5 @@ Design complex circuits, analyze truth tables, and hear your logic come to life.
 1. **Layout:** Wire up gates on an infinite, grid-less canvas.
 2. **Simulate:** Watch the bits pulse through your traces in real-time.
 3. **Compose:** Assign logic outputs to oscillators to generate unique audio sequences.
+
+Canvas ---> Table ---> Expressions ---> Music 
