@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>LogicSynth Pro - Sunset Edition</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-cream: #fffaf0;
+            --orange-prime: #f97316;
+            --orange-soft: #ffedd5;
+            --orange-border: #fdba74;
+            --text-dark: #431407;
+        }
+
+        /* Header height constant */
+        :root { --header-h: 56px; }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-cream);
+            color: var(--text-dark);
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Leave small padding for edges but reduced */
+        .page-padding { padding: 8px; }
+
+        #top-header {
+            height: var(--header-h);
+            border-bottom: 1px solid rgba(253,186,116,0.25);
+            background: white;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            padding: 8px 12px;
+            box-sizing: border-box;
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 10px;
+            padding: 8px;
+            height: calc(100vh - var(--header-h));
+            box-sizing: border-box;
+        }
+
+        .ui-panel {
+            background: #ffffff;
+            border: 2px solid var(--orange-border);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 8px 20px -8px rgba(124, 45, 18, 0.08);
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        /* Input area shorter */
+        .input-container {
+            height: 260px; /* reduced from 380 */
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .input-container::-webkit-scrollbar { width: 6px; }
+        .input-container::-webkit-scrollbar-thumb { background: var(--orange-border); border-radius: 10px; }
+
+        .logic-slot {
+            background: #fff;
+            border: 1.25px solid #f1f5f9;
+            border-radius: 10px;
+            margin-bottom: 0.45rem;
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
+            transition: all 0.15s;
+        }
+        .logic-slot:focus-within {
+            border-color: var(--orange-prime);
+            background: var(--bg-cream);
+        }
+
+        .slot-id {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--orange-prime);
+            width: 30px;
+            opacity: 0.8;
+        }
+
+        .logic-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-dark);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            width: 100%;
+            padding: 8px 6px;
+        }
+
+        /* Buttons: reduced heights and clearer text placement */
+        .btn {
+            border-radius: 12px;
+            font-weight: 700;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 12px;
+            box-sizing: border-box;
+        }
+        .btn-prime {
+            background: var(--orange-prime);
+            color: white;
+            box-shadow: 0 3px 0 #9a3412;
+        }
+        .btn-prime:active { transform: translateY(1px); box-shadow: 0 1px 0 #9a3412; }
+        .btn-sub {
+            background: var(--orange-soft);
+            color: var(--orange-prime);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .small-square {
+            width: 42px;
+            height: 38px;
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            border-radius:8px;
+            border:1px solid rgba(0,0,0,0.04);
+            background:white;
+            cursor:pointer;
+        }
+
+        /* Table and viewport */
+        .table-viewport {
+            overflow-y: auto;
+            background: white;
+            scroll-behavior: smooth;
+            padding: 6px;
+            box-sizing: border-box;
+            height: calc(100% - 12px);
+        }
+
+        #truthTable { width: 100%; border-collapse: separate; border-spacing: 0; }
+        #truthTable th {
+            background: #fff;
+            color: var(--orange-prime);
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            padding: 10px;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            border-bottom: 1.5px solid var(--orange-soft);
+        }
+        #truthTable td {
+            padding: 8px;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            border-bottom: 1px solid #fffaf0;
+        }
+
+        .row-active td { background: var(--orange-prime) !important; color: white !important; }
+        .val-1 { color: var(--orange-prime); font-weight: 800; }
+        .val-0 { color: #e2e8f0; }
+
+        /* Loader and status */
+        .loader { width: 16px; height: 16px; border-radius: 50%; border: 3px solid rgba(0,0,0,0.08); border-top-color: var(--orange-prime); animation: spin 1s linear infinite; display:inline-block; vertical-align: middle; margin-right:8px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #compileStatus { display:inline-flex; align-items:center; gap:8px; font-size:13px; }
+        #compileSuccess { background: #ddffed; color:#046a3b; padding:6px 10px; border-radius:10px; font-weight:700; display:none; }
+
+        /* Status ribbon */
+        #statusRibbon {
+            margin-top: 10px;
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 13px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(90deg, rgba(255,250,240,1) 0%, rgba(255,255,255,0.9) 100%);
+            border: 1px solid rgba(0,0,0,0.04);
+            box-shadow: 0 4px 10px -6px rgba(0,0,0,0.08);
+        }
+        #statusRibbon .left { display:flex; align-items:center; gap:10px; }
+        #statusRibbon .state { font-weight:700; color: #344054; display:flex; align-items:center; gap:8px; }
+        #statusRibbon .state .dot { width:10px; height:10px; border-radius:50%; background: #e6e6e6; display:inline-block; }
+        #statusRibbon .state.playing .dot { background: var(--orange-prime); box-shadow: 0 0 6px rgba(249,115,22,0.25); }
+        #statusRibbon .state.paused .dot { background: #ffb48f; }
+        #statusRibbon .state.standby .dot { background: #e2e8f0; }
+        #statusRibbon .state.compiling .dot { background: #fbbf24; }
+        #statusRibbon .state.recording .dot { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.2); }
+
+        /* recording dots small animation via JS */
+        .text-muted { color: #64748b; }
+        .text-success { color: #046a3b; }
+
+        /* Reduce text sizes slightly for compactness */
+        .text-xs-compact { font-size: 11px; }
+    </style>
+</head>
+<body>
+
+<!-- Top header -->
+<header id="top-header" class="page-padding">
+  <div class="flex items-center gap-3">
+    <div class="text-lg font-black text-orange-600 uppercase">LogicSynth</div>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <div class="relative">
+      <button id="products-dropdown-btn" onclick="toggleProducts(event)" class="px-2 py-1 rounded-md hover:bg-orange-soft text-sm flex items-center gap-2">
+        <i data-lucide="box" class="w-4 h-4"></i>
+        <span class="text-xs font-semibold">Products</span>
+        <i data-lucide="chevron-down" class="w-4 h-4"></i>
+      </button>
+      <div id="productsDropdown" class="hidden absolute right-0 mt-2 bg-white border rounded shadow-md w-44 z-50">
+        <div class="p-2 text-sm">Product A</div>
+        <div class="p-2 text-sm">Product B</div>
+        <div class="p-2 text-sm">Product C</div>
+      </div>
+    </div>
+
+    <button onclick="openHelp()" title="Help" class="p-2 rounded-md hover:bg-orange-soft">
+      <i data-lucide="help-circle" class="w-5 h-5"></i>
+    </button>
+
+    <a href="mailto:you@example.com" title="Email" class="p-2 rounded-md hover:bg-orange-soft">
+      <i data-lucide="mail" class="w-5 h-5"></i>
+    </a>
+
+    <a href="https://github.com" target="_blank" title="GitHub" class="p-2 rounded-md hover:bg-orange-soft">
+      <i data-lucide="github" class="w-5 h-5"></i>
+    </a>
+
+    <button title="Settings" class="p-2 rounded-md hover:bg-orange-soft" onclick="showSettings()">
+      <i data-lucide="settings" class="w-5 h-5"></i>
+    </button>
+  </div>
+</header>
+
+    <div class="app-shell">
+        <!-- Left column -->
+        <div class="flex flex-col gap-8">
+            <div class="ui-panel">
+                <div id="functionContainer" class="input-container">
+                    <!-- dynamic expression slots go here -->
+                </div>
+
+                <!-- Compile row: compile button + small plus on right -->
+                <div class="mt-3" style="display:flex; gap:8px; align-items:center;">
+                    <button id="compileBtn" onclick="compile()" class="btn btn-prime" style="flex:1; display:flex; align-items:center; justify-content:center;">
+                        <i data-lucide="cpu" class="w-4 h-4"></i>
+                        <span>COMPILE CIRCUIT</span>
+                    </button>
+
+                    <button id="addCellBtn" class="small-square" title="Add cell" onclick="addFunction()">
+                        <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <!-- compile status row -->
+                <div class="mt-3" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div id="compileStatus" class="text-xs-compact text-gray-600">
+                        <div id="compileLoader" style="display:none"><span class="loader"></span><span>Compiling...</span></div>
+                        <div id="compileSuccess">Compiled ✓</div>
+                    </div>
+                    <div id="compileError" class="text-red-500 text-xs hidden">No logic functions found. Add at least one function.</div>
+                </div>
+            </div>
+
+            <div class="ui-panel">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <div>
+                        <div class="text-xs-compact uppercase text-orange-300">Tempo</div>
+                        <div id="tempoLabel" class="font-bold">110 BPM</div>
+                    </div>
+                    <div id="statusTag" class="px-2 py-1 bg-orange-50 text-xs-compact font-black text-orange-400 rounded-full uppercase">Standby</div>
+                </div>
+
+                <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
+                    <button onclick="step(-1)" class="flex-1 btn btn-sub" style="padding:8px 6px;"><i data-lucide="chevron-left"></i><span>Prev</span></button>
+                    <button id="playBtn" disabled onclick="togglePlay()" class="flex-[2] btn btn-prime" style="padding:8px 6px; display:flex; align-items:center; justify-content:center;">
+                        <i id="playIcon" data-lucide="play" class="w-4 h-4"></i>
+                        <span id="playText">Play</span>
+                    </button>
+                    <button onclick="step(1)" class="flex-1 btn btn-sub" style="padding:8px 6px;"><i data-lucide="chevron-right"></i><span>Next</span></button>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
+                    <button onclick="save()" class="btn btn-sub text-xs-compact"> <i data-lucide="save" class="w-4 h-4"></i> Store</button>
+                    <button id="dlBtn" disabled onclick="record()" class="btn btn-sub text-xs-compact"> <i data-lucide="download" class="w-4 h-4"></i> Export</button>
+                </div>
+
+                <!-- === STATUS RIBBON inserted here (just under player box) === -->
+                <div id="statusRibbon" aria-live="polite">
+                    <div class="left">
+                        <div id="ribbonCompile" class="state text-muted standby">
+                            <span class="dot"></span>
+                            <span id="ribbonCompileText">Idle</span>
+                        </div>
+                        <div id="ribbonPlay" class="state standby">
+                            <span class="dot"></span>
+                            <span id="ribbonPlayText">Standby</span>
+                        </div>
+                    </div>
+                    <div class="right text-xs-compact text-muted" id="ribbonRight">
+                        <!-- recording dots / timestamp or additional info -->
+                        <span id="ribbonRecordingText"></span>
+                    </div>
+                </div>
+                <!-- === /STATUS RIBBON === -->
+
+            </div>
+        </div>
+
+        <!-- Right column -->
+        <div class="ui-panel" style="display:flex; flex-direction:column; padding:8px;">
+            <div id="tableViewport" class="table-viewport">
+                <table id="truthTable">
+                    <thead>
+                        <tr id="tableHeader"><th>Signals</th></tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // draw icons
+        lucide.createIcons();
+
+        // --- Audio & data ---
+        const piano = new Tone.Sampler({
+            urls: {
+                A0: "A0.mp3", C1: "C1.mp3", A1: "A1.mp3", C2: "C2.mp3",
+                A2: "A2.mp3", C3: "C3.mp3", A3: "A3.mp3", C4: "C4.mp3",
+                A4: "A4.mp3", C5: "C5.mp3", A5: "A5.mp3", C6: "C6.mp3"
+            },
+            release: 1,
+            baseUrl: "https://tonejs.github.io/audio/salamander/"
+        }).toDestination();
+
+        const recorder = new Tone.Recorder();
+        piano.connect(recorder);
+        const dest = Tone.context.createMediaStreamDestination();
+        piano.connect(dest);
+
+        let activeSeq = null;
+        let isPlaying = false;
+        let logicData = [];
+        let currentIndex = 0;
+        let currentVars = [];
+        const scale = ["C3","D3","E3","F3","G3","A3","B3","C4"];
+
+        // recording dots interval handle
+        let recordingDotsInterval = null;
+        let recordingDotsCount = 0;
+
+        // utility: update status ribbon
+        function setRibbonCompile(state, text) {
+            const el = document.getElementById('ribbonCompile');
+            const txt = document.getElementById('ribbonCompileText');
+            if (!el || !txt) return;
+            // remove state classes
+            el.classList.remove('standby','compiling','playing','paused','recording');
+            el.classList.add(state);
+            txt.textContent = text;
+        }
+        function setRibbonPlay(state, text) {
+            const el = document.getElementById('ribbonPlay');
+            const txt = document.getElementById('ribbonPlayText');
+            if (!el || !txt) return;
+            el.classList.remove('standby','compiling','playing','paused','recording');
+            el.classList.add(state);
+            txt.textContent = text;
+        }
+        function setRibbonRecordingText(text) {
+            const el = document.getElementById('ribbonRecordingText');
+            if (!el) return;
+            el.textContent = text || '';
+        }
+
+        // call when compile starts / ends / error
+        function ribbonSetCompiling() {
+            setRibbonCompile('compiling','Compiling…');
+        }
+        function ribbonSetCompiled() {
+            setRibbonCompile('standby','Compiled ✓');
+            // hide "Compiled ✓" after short delay and revert to Idle label
+            setTimeout(()=> setRibbonCompile('standby','Idle'), 1400);
+        }
+        function ribbonSetCompileError(msg='Error') {
+            setRibbonCompile('standby', msg);
+            setTimeout(()=> setRibbonCompile('standby','Idle'), 1800);
+        }
+
+        // call playback updates
+        function ribbonSetPlaying() {
+            setRibbonPlay('playing','Playing');
+        }
+        function ribbonSetPaused() {
+            setRibbonPlay('paused','Paused');
+        }
+        function ribbonSetStandby() {
+            setRibbonPlay('standby','Standby');
+        }
+
+        // recording animation: 'Recording' with dots
+        function startRecordingDots() {
+            stopRecordingDots();
+            recordingDotsCount = 0;
+            setRibbonRecordingText('Recording');
+            recordingDotsInterval = setInterval(() => {
+                recordingDotsCount = (recordingDotsCount + 1) % 4;
+                setRibbonRecordingText('Recording' + '.'.repeat(recordingDotsCount));
+            }, 400);
+            // also mark play state as recording
+            setRibbonPlay('recording','Recording');
+        }
+        function stopRecordingDots() {
+            if (recordingDotsInterval) {
+                clearInterval(recordingDotsInterval);
+                recordingDotsInterval = null;
+            }
+            recordingDotsCount = 0;
+            setRibbonRecordingText('');
+            // revert play ribbon to standby unless playing
+            if (isPlaying) ribbonSetPlaying(); else ribbonSetStandby();
+        }
+
+        // create initial functions area
+        function addFunction(val = "") {
+            const container = document.getElementById('functionContainer');
+            const count = container.children.length;
+            if (count >= 8) return;
+
+            const div = document.createElement('div');
+            div.className = "logic-slot";
+            div.innerHTML = `
+                <span class="slot-id">F${count + 1}</span>
+                <input type="text" value="${val}" class="logic-input" placeholder="e.g. A AND B" spellcheck="false">
+                <button onclick="this.parentElement.remove(); sync();" class="text-orange-200 hover:text-orange-500 ml-1" style="background:none;border:none;padding:6px;">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            `;
+            container.appendChild(div);
+            lucide.createIcons();
+            container.scrollTop = container.scrollHeight;
+            sync();
+        }
+
+        function sync() {
+            document.querySelectorAll('.slot-id').forEach((el, i) => el.innerText = `F${i+1}`);
+        }
+
+        // evaluator with strict variable matching (A..H as standalone)
+        function evalLogic(expr, mapping) {
+            try {
+                if (!expr) return 0;
+                expr = expr.toString().toUpperCase();
+
+                const tokenRe = /\s*(\(|\)|\bAND\b|\bOR\b|\bNAND\b|\bNOR\b|\bXOR\b|\bXNOR\b|\bNOT\b|&|\||\^|!|\b[A-H]\b)\s*/gi;
+                const tokens = [];
+                let m;
+                while ((m = tokenRe.exec(expr)) !== null) {
+                    const t = m[1];
+                    if (!t) continue;
+                    const up = t.toUpperCase();
+                    if (t === '(' || t === ')') { tokens.push({type:'PAREN', value:t}); continue; }
+                    if (/^\b[A-H]\b$/i.test(t)) { tokens.push({type:'VAR', value: up}); continue; }
+                    let op = up;
+                    if (t === '&') op = 'AND';
+                    if (t === '|') op = 'OR';
+                    if (t === '^') op = 'XOR';
+                    if (t === '!') op = 'NOT';
+                    tokens.push({type:'OP', value:op});
+                }
+
+                const prec = { 'NOT':4,'AND':3,'NAND':3,'XOR':2,'XNOR':2,'OR':1,'NOR':1 };
+                const assoc = { 'NOT':'right','AND':'left','NAND':'left','XOR':'left','XNOR':'left','OR':'left','NOR':'left' };
+                const output = []; const ops = [];
+                for (const tk of tokens) {
+                    if (tk.type === 'VAR') output.push(tk);
+                    else if (tk.type === 'OP') {
+                        const o1 = tk.value;
+                        while (ops.length) {
+                            const top = ops[ops.length-1];
+                            if (top.type !== 'OP') break;
+                            const o2 = top.value;
+                            if ((assoc[o1]==='left' && prec[o1] <= prec[o2]) || (assoc[o1]==='right' && prec[o1] < prec[o2])) output.push(ops.pop());
+                            else break;
+                        }
+                        ops.push(tk);
+                    } else if (tk.type === 'PAREN') {
+                        if (tk.value === '(') ops.push(tk);
+                        else {
+                            while (ops.length && ops[ops.length-1].type !== 'PAREN') output.push(ops.pop());
+                            if (ops.length && ops[ops.length-1].type === 'PAREN') ops.pop();
+                        }
+                    }
+                }
+                while (ops.length) output.push(ops.pop());
+
+                const stack = [];
+                for (const tk of output) {
+                    if (tk.type === 'VAR') stack.push(mapping[tk.value] ? 1 : 0);
+                    else if (tk.type === 'OP') {
+                        const op = tk.value;
+                        if (op === 'NOT') { const a = stack.pop() || 0; stack.push(a ? 0 : 1); }
+                        else {
+                            const b = stack.pop() || 0; const a = stack.pop() || 0;
+                            let res = 0;
+                            if (op === 'AND') res = (a & b) ? 1 : 0;
+                            else if (op === 'OR') res = (a | b) ? 1 : 0;
+                            else if (op === 'XOR') res = ((a ^ b) ? 1 : 0);
+                            else if (op === 'NAND') res = ((a & b) ? 0 : 1);
+                            else if (op === 'NOR') res = ((a | b) ? 0 : 1);
+                            else if (op === 'XNOR') res = ((a ^ b) ? 0 : 1);
+                            else res = 0;
+                            stack.push(res);
+                        }
+                    }
+                }
+                return stack.length ? (stack[stack.length-1] ? 1 : 0) : 0;
+            } catch(e) { return 0; }
+        }
+
+        // compile with loader, ribbon updates, disabling play
+        async function compile() {
+            stop();
+            const playBtn = document.getElementById('playBtn'); if (playBtn) playBtn.disabled = true;
+            document.getElementById('compileError').classList.add('hidden');
+            document.getElementById('compileSuccess').style.display = 'none';
+            document.getElementById('compileLoader').style.display = 'inline-flex';
+
+            // ribbon - set compiling
+            ribbonSetCompiling();
+
+            setTimeout(() => {
+                try {
+                    const inputs = Array.from(document.querySelectorAll('.logic-input'));
+                    const exprsAll = inputs.map(i => i.value.trim());
+                    const exprs = exprsAll.filter(s => s.length > 0);
+                    if (exprs.length === 0) {
+                        document.getElementById('compileLoader').style.display = 'none';
+                        document.getElementById('compileError').classList.remove('hidden');
+                        ribbonSetCompileError('No functions');
+                        return;
+                    }
+
+                    const letters = Array.from(new Set(exprs.join(' ').match(/\b([A-H])\b/gi) || [])).map(x=>x.toUpperCase()).sort();
+                    currentVars = letters;
+                    if (currentVars.length === 0) {
+                        document.getElementById('compileLoader').style.display = 'none';
+                        document.getElementById('compileError').classList.remove('hidden');
+                        ribbonSetCompileError('No variables A..H found');
+                        return;
+                    }
+
+                    const rowCount = Math.pow(2, currentVars.length);
+                    const tableBody = document.getElementById('tableBody');
+                    const tableHeader = document.getElementById('tableHeader');
+
+                    tableHeader.innerHTML = `<tr><th class="border-r border-orange-100">${currentVars.join('')}</th>${exprs.map((_,i)=>`<th>F${i+1}</th>`).join('')}</tr>`;
+                    tableBody.innerHTML = '';
+                    logicData = exprs.map(()=>[]);
+
+                    for (let i=0;i<rowCount;i++) {
+                        const bits = i.toString(2).padStart(currentVars.length,'0').split('').map(Number);
+                        const mapping = {};
+                        currentVars.forEach((v,idx)=>mapping[v]=bits[idx]);
+                        const results = exprs.map(expr => {
+                            const res = evalLogic(expr, mapping);
+                            return res;
+                        });
+                        results.forEach((r, idx) => logicData[idx].push(r));
+                        const row = document.createElement('tr'); row.id = `row-${i}`;
+                        let html = `<td class="border-r border-orange-50 text-slate-300">${bits.join('')}</td>`;
+                        results.forEach(res => html += `<td><span class="${res ? 'val-1':'val-0'}">${res}</span></td>`);
+                        row.innerHTML = html;
+                        tableBody.appendChild(row);
+                    }
+
+                    const permEl = document.getElementById('permLabel'); if (permEl) permEl.innerText = rowCount;
+
+                    document.getElementById('compileLoader').style.display = 'none';
+                    document.getElementById('compileSuccess').style.display = 'inline-block';
+                    ribbonSetCompiled();
+
+                    setTimeout(()=>{ document.getElementById('compileSuccess').style.display = 'none'; }, 1200);
+
+                    const dl = document.getElementById('dlBtn'); if (dl) dl.disabled = false;
+                    if (playBtn) playBtn.disabled = false;
+                    initSequence();
+                } catch(e) {
+                    document.getElementById('compileLoader').style.display = 'none';
+                    document.getElementById('compileError').classList.remove('hidden');
+                    ribbonSetCompileError('Compile error');
+                }
+            }, 30);
+        }
+
+        function playRow(index, time = Tone.now()) {
+            logicData.forEach((col, cIdx) => {
+                if (col[index] === 1) {
+                    const note = scale[cIdx % scale.length];
+                    piano.triggerAttackRelease(note, "8n", time, 0.5);
+                }
+            });
+            highlight(index);
+        }
+
+        function highlight(index) {
+            document.querySelectorAll('.row-active').forEach(r => r.classList.remove('row-active'));
+            const row = document.getElementById(`row-${index}`);
+            const viewport = document.getElementById('tableViewport');
+            if (row && viewport) {
+                row.classList.add('row-active');
+                const vHeight = viewport.clientHeight;
+                const rTop = row.offsetTop;
+                const rHeight = row.offsetHeight;
+                const targetScroll = rTop - (vHeight/2) + (rHeight/2);
+                viewport.scrollTo({ top: targetScroll, behavior: 'smooth' });
+            }
+        }
+
+        function initSequence() {
+            if (activeSeq) activeSeq.dispose();
+            if (!logicData.length || !logicData[0] || !logicData[0].length) return;
+            const events = Array.from({length: logicData[0].length}, (_,i)=>i);
+            activeSeq = new Tone.Sequence((time, index) => {
+                Tone.Draw.schedule(()=>{ currentIndex = index; playRow(index, time); }, time);
+            }, events, "8n");
+            Tone.Transport.bpm.value = 110;
+        }
+
+        async function togglePlay() {
+            await Tone.start();
+            if (isPlaying) {
+                Tone.Transport.pause();
+                document.getElementById('statusTag').innerText = "Paused";
+                ribbonSetPaused();
+            } else {
+                if (activeSeq) activeSeq.start(0);
+                Tone.Transport.start();
+                document.getElementById('statusTag').innerText = "Playing";
+                ribbonSetPlaying();
+            }
+            isPlaying = !isPlaying;
+            updateUI();
+        }
+
+        function stop() {
+            Tone.Transport.stop();
+            if (activeSeq) activeSeq.stop();
+            isPlaying = false;
+            document.getElementById('statusTag').innerText = "Standby";
+            ribbonSetStandby();
+            updateUI();
+        }
+
+        function step(dir) {
+            if (!logicData.length) return;
+            const len = logicData[0].length;
+            currentIndex = (currentIndex + dir + len) % len;
+            playRow(currentIndex);
+        }
+
+        function updateUI() {
+            const icon = document.getElementById('playIcon');
+            icon.setAttribute('data-lucide', isPlaying ? 'pause' : 'play');
+            document.getElementById('playText').innerText = isPlaying ? 'Pause' : 'Play';
+            lucide.createIcons();
+        }
+
+        function record() {
+            if (!activeSeq) return;
+            const recorder = new MediaRecorder(dest.stream);
+            const chunks = [];
+            recorder.ondataavailable = e => chunks.push(e.data);
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'audio/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = "logicsynth_sunset.webm"; a.click();
+                // stop recording animation and update ribbon
+                stopRecordingDots();
+                stop(); // sets ribbon to standby
+            };
+            recorder.start();
+            // start recording animation & ribbon
+            startRecordingDots();
+            // start transport if not started
+            Tone.Transport.start();
+            if (activeSeq) activeSeq.start(0);
+            const dur = (60 / 110) * (logicData[0].length / 2) * 1000;
+            setTimeout(() => { recorder.stop(); }, dur + 500);
+        }
+
+        function save() {
+            const inputs = Array.from(document.querySelectorAll('.logic-input')).map(i => i.value);
+            localStorage.setItem('ls_sunset_save', JSON.stringify(inputs));
+        }
+
+        window.onload = () => {
+            const saved = localStorage.getItem('ls_sunset_save');
+            if (saved) JSON.parse(saved).forEach(v => addFunction(v));
+            else {
+                addFunction("A AND B");
+                addFunction("NOT B XOR C");
+                addFunction("A OR C");
+            }
+            compile();
+            // ensure icons applied to dynamic adds
+            lucide.createIcons();
+        };
+
+        // header helpers
+        function toggleProducts(e) { e.stopPropagation(); const dd = document.getElementById('productsDropdown'); if (!dd) return; dd.classList.toggle('hidden'); }
+        document.addEventListener('click', (e)=>{ const dd = document.getElementById('productsDropdown'); if (!dd) return; if (!e.target.closest('#products-dropdown-btn') && !e.target.closest('#productsDropdown')) dd.classList.add('hidden'); });
+
+        function openHelp() {
+            let modal = document.getElementById('music-help-modal');
+            if (!modal) {
+                modal = document.createElement('div'); modal.id = 'music-help-modal';
+                modal.style = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.4);z-index:80';
+                modal.innerHTML = `<div style="background:white;padding:18px;border-radius:10px;max-width:520px">
+                    <h3 style="margin:0 0 8px 0">Help</h3>
+                    <div style="font-size:13px;color:#444">Use the "+” to add cells. Enter expressions in word syntax (e.g. <code>A AND B</code>). Supported: <b>AND OR NOT XOR XNOR NAND NOR</b>. Variables allowed: single letters A..H only.</div>
+                    <div style="margin-top:12px;text-align:right"><button onclick="document.getElementById('music-help-modal').remove()" style="padding:8px 12px">Close</button></div>
+                </div>`;
+                document.body.appendChild(modal);
+            } else modal.style.display = 'flex';
+        }
+
+        function showSettings() { alert('Settings placeholder — add settings UI here.'); }
+    </script>
+
+</body>
+</html>
