@@ -1,4 +1,4 @@
-# ▽ NERO 
+# 🟄 NERO 
 
 > **A Canvas-Based Boolean Logic Builder — Listen to the Bits.**
 
@@ -15,3 +15,7 @@ Design complex circuits, analyze truth tables, and hear your logic come to life.
 3. **Compose:** Assign logic outputs to oscillators to generate unique audio sequences.
 
 Canvas ---> Table ---> Expressions ---> Music 
+
+### Author
+Ahmad Sohaib Qasim
+[LinkedIn](https://linkedin.com/in/asqasim)
