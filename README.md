@@ -1,7 +1,5 @@
 # 🟄 NERO 
-
 > **A Canvas-Based Boolean Logic Builder — Listen to the Bits.**
-
 Nero is a generative environment where discrete logic meets algorithmic composition. 
 Design complex circuits, analyze truth tables, and hear your logic come to life.
 
@@ -16,6 +14,22 @@ Design complex circuits, analyze truth tables, and hear your logic come to life.
 
 Canvas ---> Table ---> Expressions ---> Music 
 
+---
+
+### 🔌 Sample Circuit
+
+![Sample Circuit](images/sample_circuit.png)
+
+---
+
+### 🎵 How It Sounds
+
+> ▶ [Listen to the sample circuit soundscape](audio/sample_circuit.mp3)
+
+*The output bits of the circuit above are mapped to oscillators — each logic state generates a unique tone sequence.*
+
+---
+
 ### Author
-Ahmad Sohaib Qasim
+Ahmad Sohaib Qasim  
 [LinkedIn](https://linkedin.com/in/asqasim)
