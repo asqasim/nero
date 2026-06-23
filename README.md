@@ -27,3 +27,5 @@ Design complex circuits, analyze truth tables, and hear your logic come to life.
 ### Author
 Ahmad Sohaib Qasim  
 [LinkedIn](https://linkedin.com/in/asqasim)
+
+[Kaggle](https://kaggle.com/asqasim)
