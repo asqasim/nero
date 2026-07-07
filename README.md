@@ -7,7 +7,7 @@ Design complex circuits, analyze truth tables, and hear your logic come to life.
 
 ### Sample Circuit
 
-![Sample Circuit](images/sample_circuit.png)
+![Sample circuit](images/sample_circuit.png)
 
 ---
 
