@@ -429,6 +429,8 @@
         .popover-delete:hover {
             background: #fee2e2;
         }
+            .component.is-z .art, .component.is-z > img { opacity: .45; }
+        .component.contend { filter: drop-shadow(0 0 5px #ef476f) drop-shadow(0 0 2px #ef476f); }
     </style>
 </head>
 
@@ -854,8 +856,8 @@
         // legacy parts need roles/labels only
         const ROLE = { SWITCH: 'source', BUTTON: 'source', CONST: 'source', NOTE: 'organizer', FRAME: 'organizer', BANNER: 'organizer', BOOKMARK: 'organizer' };
         const roleOf = (c) => ROLE[c.type] || 'logic';
-        const isInputComp = (c) => c.type === 'SWITCH' || c.type === 'BUTTON' || c.type === 'KEYPAD' || c.type === 'DIP' || c.type === 'CLOCK';
-        const isOutputComp = (c) => c.type === 'BULB' || c.type === 'PROBE' || c.type === 'BUZZER';
+        const isInputComp = (c) => c.type === 'PORT_IN' || c.type === 'SWITCH' || c.type === 'BUTTON' || c.type === 'KEYPAD' || c.type === 'DIP' || c.type === 'CLOCK';
+        const isOutputComp = (c) => c.type === 'PORT_OUT' || c.type === 'BULB' || c.type === 'PROBE' || c.type === 'BUZZER';
         function inputCount(c) {
             if (NGATES.has(c.type)) return Math.min(8, Math.max(2, (c.params && c.params.inputs) || 2));
             if (c.type === 'LEDBAR') return Math.min(16, Math.max(2, (c.params && c.params.leds) || 8));
@@ -976,6 +978,60 @@
                 ev: (i) => { const a = (i[0] << 1) | i[1]; return [0, 1, 2, 3].map(k => (i[2] && a === k) ? 1 : 0); },
                 ex: (e) => [0, 1, 2, 3].map(k => `(${e[2]} AND ${k & 2 ? e[0] : `(NOT ${e[0]})`} AND ${k & 1 ? e[1] : `(NOT ${e[1]})`})`) }
         };
+        // tri-state buffer: Y = A while EN = 1, otherwise the output is released (Z). Nets are wired-OR, so a released driver contributes nothing;
+        // simulateLogic() flags the part as Z and detects bus contention (two enabled drivers pushing 0 and 1 onto the same pin).
+        BLOCKS.tristate = { type: 'TRISTATE',                              // in: A EN   out: Y
+            ev: (i) => [i[0] & i[1]], ex: (e) => [xAnd(e[0], e[1])] };
+        // ROM 8x4: D = mem[A]. Pins top to bottom: A2 A1 A0 -> D3 D2 D1 D0. The 8 nibbles live in params.data and are saved with the circuit.
+        // RAM 8x4: pins A2 A1 A0 DI3..DI0 (left), DO3..DO0 (right), WE and CLK (bottom). Writes mem[A] = DI on a rising CLK while WE = 1; reads are asynchronous.
+        // The words live in c.mem (saved with the circuit). Table / expressions treat the RAM as a lookup of its *current* contents.
+        const romWords = (c) => { const d = (c.params || {}).data; return Array.isArray(d) && d.length === 8 ? d : [0, 0, 0, 0, 0, 0, 0, 0]; };
+        const ramMem = (c) => (Array.isArray(c.mem) && c.mem.length === 8) ? c.mem : (c.mem = [0, 0, 0, 0, 0, 0, 0, 0]);
+        const memWords = (c) => c.type === 'ROM' ? romWords(c) : ramMem(c);
+        const memAddr = (i) => ((i[0] ? 4 : 0) | (i[1] ? 2 : 0) | (i[2] ? 1 : 0));
+        const memRead = (w) => [(w >> 3) & 1, (w >> 2) & 1, (w >> 1) & 1, w & 1];
+        const memEx = (W, e) => [3, 2, 1, 0].map(b => { let r = '0'; for (let a = 0; a < 8; a++) if ((W[a] >> b) & 1) r = xOr(r, xAnd(xAnd((a & 4) ? e[0] : xNot(e[0]), (a & 2) ? e[1] : xNot(e[1])), (a & 1) ? e[2] : xNot(e[2]))); return r; });
+        function memOverlay(c, W, H, x0, y0) {                           // live hex readout drawn over the decorative dot grid
+            const words = memWords(c), cur = c._addr | 0; let t = `<rect x="${x0 - 2}" y="${y0 - 2}" width="29" height="21" rx="2.5" fill="#2a1519" opacity=".92"/>`;
+            for (let k = 0; k < 8; k++) t += `<text x="${x0 + (k % 4) * 6.6 + 2.5}" y="${y0 + 6.8 + (k >> 2) * 8.2}" font-family="${MONO}" font-size="7" font-weight="800" text-anchor="middle" fill="${k === cur ? '#ffd166' : '#d9aab4'}">${(words[k] & 15).toString(16).toUpperCase()}</text>`;
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible">${t}</svg>`;
+        }
+        BLOCKS.rom = { type: 'ROM', liveArt: true,
+            ev: (i, c) => memRead(romWords(c)[memAddr(i)] & 15), ex: (e, c) => memEx(romWords(c), e),
+            step: (i, c) => { const a = memAddr(i); if (c._addr === a) return false; c._addr = a; return true; },
+            def: { liveArt: true, defaults: { params: { data: [0, 1, 2, 3, 4, 5, 6, 7] } }, params: [{ type: 'action', label: 'Edit contents…', run: (c) => openMemEditor(c) }], dblclick: (c) => openMemEditor(c),
+                render: (c, art) => { art.innerHTML = artImg('rom') + memOverlay(c, 96, 80, 37, 36); } } };
+        BLOCKS.ram = { type: 'RAM', liveArt: true,
+            ev: (i, c) => memRead(ramMem(c)[memAddr(i)] & 15), ex: (e, c) => memEx(ramMem(c), e),
+            step: (i, c) => {                                              // i: A2 A1 A0 DI3 DI2 DI1 DI0 WE CLK
+                const clk = i[8] ? 1 : 0; if (c._clk === undefined) c._clk = clk; const rise = !!clk && !c._clk; c._clk = clk;
+                const a = memAddr(i); let ch = c._addr !== a; c._addr = a;
+                if (rise && i[7]) { const d = (i[3] ? 8 : 0) | (i[4] ? 4 : 0) | (i[5] ? 2 : 0) | (i[6] ? 1 : 0), m = ramMem(c); if (m[a] !== d) { m[a] = d; ch = true; } }
+                return ch; },
+            def: { liveArt: true, params: [{ type: 'action', label: 'Edit contents…', run: (c) => openMemEditor(c) }, { type: 'action', label: 'Clear memory', run: (c) => { c.mem = [0, 0, 0, 0, 0, 0, 0, 0]; refreshArt(c); simulateLogic(); saveState(); } }], dblclick: (c) => openMemEditor(c),
+                render: (c, art) => { art.innerHTML = artImg('ram') + memOverlay(c, 112, 128, 43, 54); } } };
+        function openMemEditor(c) {                                       // hex-grid dialog for ROM / RAM contents
+            hideContextMenu(); const old = document.getElementById('mem-editor'); if (old) old.remove();
+            const isRom = c.type === 'ROM', ov = document.createElement('div'); ov.id = 'mem-editor'; ov.className = 'fixed inset-0 z-50 flex items-center justify-center'; ov.style.background = 'rgba(0,0,0,.45)';
+            ['mousedown', 'keydown', 'keyup', 'wheel', 'contextmenu', 'dblclick'].forEach(ev => ov.addEventListener(ev, e => e.stopPropagation()));
+            const draw = () => {
+                const W = memWords(c);
+                ov.innerHTML = `<div class="bg-white rounded-xl shadow-2xl p-5 border border-gray-200" style="width:360px;font-family:${MONO}"><div class="flex items-center justify-between mb-3"><b class="text-gray-800">${isRom ? 'ROM' : 'RAM'} 8\u00d74 contents</b><span class="text-xs text-gray-400">${isRom ? 'saved with the circuit' : 'live: edits take effect now'}</span></div>`
+                    + `<table class="w-full text-sm"><tr class="text-xs text-gray-400"><th class="text-left">addr</th><th>hex</th><th>bits D3\u2009D2\u2009D1\u2009D0</th></tr>`
+                    + W.map((w, a) => `<tr class="${a === (c._addr | 0) ? 'bg-amber-50' : ''}"><td class="py-1">${a.toString(2).padStart(3, '0')} <span class="text-gray-400">(${a})</span></td><td class="text-center"><input data-a="${a}" value="${(w & 15).toString(16).toUpperCase()}" maxlength="1" class="w-9 text-center border border-gray-300 rounded uppercase"></td>`
+                    + `<td class="text-center">${[3, 2, 1, 0].map(b => `<button data-a="${a}" data-b="${b}" class="w-7 h-7 mx-0.5 rounded border text-xs font-bold ${(w >> b) & 1 ? 'bg-emerald-500 border-emerald-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-400'}">${(w >> b) & 1}</button>`).join('')}</td></tr>`).join('')
+                    + `</table><div class="flex items-center gap-2 mt-4"><button id="me-clear" class="px-3 py-1.5 text-xs rounded border border-gray-300 hover:bg-gray-100">Clear</button><button id="me-ramp" class="px-3 py-1.5 text-xs rounded border border-gray-300 hover:bg-gray-100">Counting 0\u20137</button><button id="me-seg" class="px-3 py-1.5 text-xs rounded border border-gray-300 hover:bg-gray-100">Hex digits 0\u20137 (7-seg)</button><span class="flex-1"></span><button id="me-done" class="px-4 py-1.5 text-sm font-bold rounded bg-blue-600 text-white hover:bg-blue-700">Done</button></div></div>`;
+                const set = (a, v) => { const arr = isRom ? (c.params.data = romWords(c).slice()) : ramMem(c); arr[a] = v & 15; refreshArt(c); simulateLogic(); };
+                ov.querySelectorAll('input[data-a]').forEach(inp => { inp.onchange = () => { const v = parseInt(inp.value, 16); if (!isNaN(v)) set(+inp.dataset.a, v); draw(); }; inp.onfocus = () => inp.select(); });
+                ov.querySelectorAll('button[data-b]').forEach(bt => { bt.onclick = () => { const a = +bt.dataset.a; set(a, memWords(c)[a] ^ (1 << +bt.dataset.b)); draw(); }; });
+                const fill = (fn) => { for (let a = 0; a < 8; a++) set(a, fn(a)); draw(); };
+                ov.querySelector('#me-clear').onclick = () => fill(() => 0); ov.querySelector('#me-ramp').onclick = () => fill((a) => a);
+                ov.querySelector('#me-seg').onclick = () => fill((a) => [0x7E, 0x30, 0x6D, 0x79, 0x33, 0x5B, 0x5F, 0x70][a] >> 3 & 15);       // upper nibble of 7-seg codes (a-g) as a demo pattern
+                ov.querySelector('#me-done').onclick = () => { ov.remove(); saveState(); updatePropsPanel(); };
+            };
+            ov.addEventListener('mousedown', (e) => { if (e.target === ov) { ov.remove(); saveState(); } });
+            document.body.appendChild(ov); draw();
+        }
         const BLOCK_BY_TYPE = {}, BLOCK_LIST = [];
 
         // ================= LIVE PANEL PARTS: displays + inputs, generated art (same look as images/components) and docking =================
@@ -1238,6 +1294,194 @@
                 size: (c) => [72, dipH(c)], pins: (c) => Array.from({ length: dipN(c) }, (_, k) => ({ kind: 'out', idx: k, x: 72, y: dipPad(c)[0] + 14 * k, dir: [1, 0] })), render: (c, art) => { art.innerHTML = dipHtml(c); },
                 params: [{ key: 'switches', label: 'Switches', type: 'int', min: 1, max: 8 }] } }
         };
+
+        // ================= modules (sub-circuits) + ports =================
+        // A module definition ({name, comps, wires}) lives in state.modules, shared by every instance. Placing an instance adds a MODULE part whose pins come from the
+        // PORT_IN / PORT_OUT parts inside the definition (ordered top to bottom). The simulator and all compilers see a *flattened* copy of the circuit: each instance is
+        // replaced by clones of its inner parts (unique ids), and the ports become zero-delay reroute points, so table / expressions / music / scope work unchanged.
+        const MOD = { saved: null, clones: new Map(), vids: new Map(), wires: new Map(), nv: 1000000, last: null };
+        const modDef = (c) => state.modules[(c.params || {}).def];
+        const portSort = (a, b) => (a.y - b.y) || (a.id - b.id);
+        function modPorts(def) { const p = def ? def.comps.filter(c => c.type === 'PORT_IN' || c.type === 'PORT_OUT') : []; return { ins: p.filter(c => c.type === 'PORT_IN').sort(portSort), outs: p.filter(c => c.type === 'PORT_OUT').sort(portSort) }; }
+        const modNIn = (c) => modPorts(modDef(c)).ins.length, modNOut = (c) => modPorts(modDef(c)).outs.length;
+        const modH = (c) => Math.max(96, 34 + 14 * Math.max(modNIn(c), modNOut(c), 1) + 14);
+        const modOutY0 = (c) => 34 + 7 * Math.max(0, modNIn(c) - modNOut(c));
+        const modTitle = (c) => { const p = c.params || {}, d = modDef(c); return p.name || (d && d.name) || 'Module'; };
+        function modSvg(c) {
+            const d = modDef(c), P = modPorts(d), h = modH(c), W = 112, y0o = modOutY0(c), t = escHtml(modTitle(c)).slice(0, 14);
+            let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" width="100%" height="100%" style="overflow:visible"><defs><linearGradient id="mg${c.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b7a80"/><stop offset="1" stop-color="#1b4549"/></linearGradient></defs>`
+                + `<rect x="13" y="6" width="86" height="${h - 12}" rx="7" fill="url(#mg${c.id})" stroke="#6fe0d2" stroke-width="2"/><rect x="13" y="6" width="86" height="9" rx="4" fill="#2bd9c4"/>`
+                + `<text x="56" y="26.5" font-family="${MONO}" font-size="${t.length > 9 ? 8 : 9.5}" font-weight="800" text-anchor="middle" fill="#e8fffb">${t}</text>`;
+            P.ins.forEach((p, k) => { const y = 34 + 14 * k; s += `<line x1="0" y1="${y}" x2="13" y2="${y}" stroke="#8aa0a3" stroke-width="3"/><text x="18" y="${y + 3}" font-family="${MONO}" font-size="7.5" font-weight="700" fill="#bfeee8">${escHtml((p.params || {}).name || 'IN').slice(0, 6)}</text>`; });
+            P.outs.forEach((p, k) => { const y = y0o + 14 * k; s += `<line x1="99" y1="${y}" x2="${W}" y2="${y}" stroke="#8aa0a3" stroke-width="3"/><text x="94" y="${y + 3}" font-family="${MONO}" font-size="7.5" font-weight="700" text-anchor="end" fill="#bfeee8">${escHtml((p.params || {}).name || 'OUT').slice(0, 6)}</text>`; });
+            if (!P.ins.length && !P.outs.length) s += `<text x="56" y="${h / 2 + 4}" font-family="${MONO}" font-size="7" text-anchor="middle" fill="#9ad9d2">double-click</text><text x="56" y="${h / 2 + 13}" font-family="${MONO}" font-size="7" text-anchor="middle" fill="#9ad9d2">to edit</text>`;
+            return s + '</svg>';
+        }
+        function portSvg(c, isIn) {
+            const on = !!(c.value & 1), nm = escHtml((c.params || {}).name || (isIn ? 'IN' : 'OUT')).slice(0, 7), col = isIn ? ['#1fd19a', '#0e7a59'] : ['#ffb347', '#a8641a'];
+            const pts = isIn ? '2,2 53,2 66,16 53,30 2,30' : '2,16 15,2 66,2 66,30 15,30';
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 68 32" width="100%" height="100%" style="overflow:visible"><defs><linearGradient id="pg${c.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col[0]}"/><stop offset="1" stop-color="${col[1]}"/></linearGradient></defs>`
+                + `<polygon points="${pts}" fill="url(#pg${c.id})" stroke="${on ? '#fff' : '#0b2b22'}" stroke-width="${on ? 2 : 1.2}" stroke-linejoin="round" opacity="${isIn && !on ? .8 : 1}"/>`
+                + `<line x1="${isIn ? 66 : 0}" y1="16" x2="${isIn ? 68 : 2}" y2="16" stroke="#8aa0a3" stroke-width="3"/>`
+                + `<text x="${isIn ? 26 : 40}" y="19.5" font-family="${MONO}" font-size="9.5" font-weight="800" text-anchor="middle" fill="#06231a">${nm}</text><circle cx="${isIn ? 60 : 8}" cy="16" r="2.4" fill="${on ? '#fff' : 'rgba(0,0,0,.35)'}"/>`
+                + (isIn ? `</svg><div class="sw-hit" data-sw="${c.id}" style="left:0;top:0;width:${68 * ART_SCALE}px;height:${32 * ART_SCALE}px"></div>` : '</svg>');
+        }
+        const portName = (type) => { const n = state.components.filter(x => x.type === type).length + 1; return (type === 'PORT_IN' ? 'IN' : 'OUT') + n; };
+        const portDef = (isIn) => ({ size: () => [68, 32], defaults: { params: { name: '' } }, pins: () => [isIn ? { kind: 'out', idx: 0, x: 68, y: 16, dir: [1, 0] } : { kind: 'in', idx: 0, x: 0, y: 16, dir: [-1, 0] }],
+            params: [{ key: 'name', label: 'Pin name', type: 'string' }], onCreate: (c) => { c.params.name = portName(c.type); }, render: (c, art) => { art.innerHTML = portSvg(c, isIn); } });
+        LIVE.port_in = { type: 'PORT_IN', gate: { inputs: 0, outputs: 1 }, role: 'source', def: portDef(true) };
+        LIVE.port_out = { type: 'PORT_OUT', gate: { inputs: 1, outputs: 0 }, def: portDef(false) };
+        LIVE.module = { type: 'MODULE', gate: { inputs: 0, outputs: 0 }, role: 'organizer', def: { rotatable: false, nIn: modNIn, nOut: modNOut, dblclick: (c) => enterModule(c),
+            size: (c) => [112, modH(c)], pins: (c) => { const P = modPorts(modDef(c)), y0 = modOutY0(c); return P.ins.map((p, k) => ({ kind: 'in', idx: k, x: 0, y: 34 + 14 * k, dir: [-1, 0] })).concat(P.outs.map((p, k) => ({ kind: 'out', idx: k, x: 112, y: y0 + 14 * k, dir: [1, 0] }))); },
+            onCreate: (c) => { const id = 'm' + (state.nextId++), n = Object.keys(state.modules).length + 1; state.modules[id] = { name: 'Module ' + n, comps: [], wires: [] }; c.params = { def: id, name: '' }; },
+            params: [{ key: 'name', label: 'Label', type: 'string' }, { type: 'action', label: 'Edit module…', run: (c) => enterModule(c) }],
+            render: (c, art) => { art.innerHTML = modSvg(c); } } };
+        ROLE.MODULE = 'organizer';
+
+        function flatGraph() {
+            const comps = [], wires = [], info = [], vid = (k) => { let v = MOD.vids.get(k); if (!v) { v = MOD.nv++; MOD.vids.set(k, v); } return v; };
+            function level(cs, ws, pre, depth) {
+                const map = new Map(), inst = new Map(), pIn = new Map(), pOut = new Map();
+                cs.forEach(c => {
+                    if (c.type === 'MODULE') { inst.set(c.id, c); return; }
+                    if (pre === '') { map.set(c.id, c); comps.push(c); return; }
+                    const v = vid(pre + c.id); let cl = MOD.clones.get(v);
+                    if (!cl) { cl = { ...c, id: v, params: c.params ? JSON.parse(JSON.stringify(c.params)) : c.params }; if (c.type === 'PORT_IN' || c.type === 'PORT_OUT') cl.type = 'REROUTE'; MOD.clones.set(v, cl); }
+                    map.set(c.id, cl); comps.push(cl);
+                });
+                inst.forEach(M => {
+                    const def = state.modules[(M.params || {}).def]; if (!def || depth >= 8) { pIn.set(M.id, []); pOut.set(M.id, []); return; }
+                    const r = level(def.comps, def.wires, pre + M.id + '/', depth + 1), P = modPorts(def);
+                    pIn.set(M.id, P.ins.map(p => r.map.get(p.id))); pOut.set(M.id, P.outs.map(p => r.map.get(p.id)));
+                    if (pre === '') info.push({ M, ins: pIn.get(M.id), outs: pOut.get(M.id) });
+                });
+                ws.forEach(w => {
+                    const fc = w.from.compId, tc = w.to.compId; let from, to;
+                    if (inst.has(fc)) { const o = (pOut.get(fc) || [])[w.from.portIdx | 0]; if (!o) return; from = { compId: o.id, portIdx: 0 }; } else { const m = map.get(fc); if (!m) return; from = { compId: m.id, portIdx: w.from.portIdx }; }
+                    if (inst.has(tc)) { const o = (pIn.get(tc) || [])[w.to.portIdx | 0]; if (!o) return; to = { compId: o.id, portIdx: 0 }; } else { const m = map.get(tc); if (!m) return; to = { compId: m.id, portIdx: w.to.portIdx }; }
+                    if (pre === '' && !inst.has(fc) && !inst.has(tc)) { wires.push(w); return; }
+                    const key = pre + 'w' + w.id; let fw = MOD.wires.get(key); if (!fw) { fw = { value: 0 }; MOD.wires.set(key, fw); }
+                    fw.id = pre === '' ? w.id : vid(key); fw.from = from; fw.to = to; wires.push(fw);
+                });
+                return { map };
+            }
+            level(state.components, state.wires, '', 0);
+            return { components: comps, wires, info };
+        }
+        function withFlat(fn) {                                            // run an engine function against the flattened circuit (no-op without modules)
+            if (MOD.saved || !state.components.some(c => c.type === 'MODULE')) return fn();
+            const g = flatGraph(); MOD.saved = { components: state.components, wires: state.wires }; MOD.last = g;
+            state.components = g.components; state.wires = g.wires;
+            try { return fn(); } finally { state.components = MOD.saved.components; state.wires = MOD.saved.wires; MOD.saved = null; }
+        }
+        function modVisuals() {                                            // instance pins + output mask follow the clones inside
+            const g = MOD.last; if (!g || !g.info.length) return; const real = new Set(state.components.filter(c => c.type === 'MODULE').map(c => c.id));
+            g.info.forEach(({ M, ins, outs }) => {
+                if (!real.has(M.id)) return; const lit = (o) => !!(o && g.wires.some(w => w.to.compId === o.id && w.value)); let v = 0;
+                outs.forEach((o, j) => { if (lit(o)) v |= (1 << j); }); M.value = v;
+                document.querySelectorAll(`.node[data-comp-id="${M.id}"]`).forEach(el => { const i = +el.dataset.portIdx, on = el.dataset.portType === 'out' ? !!((v >> i) & 1) : lit(ins[i]); el.classList.toggle('high', on); });
+            });
+        }
+        const cloneJ = (o) => JSON.parse(JSON.stringify(o));
+        function reloadCanvas() { DOM.componentLayer.innerHTML = ''; DOM.wireLayer.innerHTML = ''; state.components.forEach(c => createComponentDOM(c)); state.selection = []; renderSelection(); requestAnimationFrame(() => { renderWires(); simulateLogic(); updateLabels(); updatePropsPanel(); }); }
+        function resetHistory() { historyStack.length = 0; historyIndex = -1; saveState(); }
+        function pruneModuleWires() {                                      // drop wires that point at pins an edited definition no longer has
+            const by = new Map(state.components.filter(c => c.type === 'MODULE').map(c => [c.id, [modNIn(c), modNOut(c)]]));
+            state.wires = state.wires.filter(w => !((by.has(w.to.compId) && (w.to.portIdx | 0) >= by.get(w.to.compId)[0]) || (by.has(w.from.compId) && (w.from.portIdx | 0) >= by.get(w.from.compId)[1])));
+        }
+        function updateModuleBanner() {
+            let b = document.getElementById('module-banner');
+            if (!state.editStack.length) { if (b) b.remove(); return; }
+            if (!b) { b = document.createElement('div'); b.id = 'module-banner'; b.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:40;background:#0f766e;color:#fff;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);font:600 13px system-ui;display:flex;gap:10px;align-items:center'; document.body.appendChild(b); }
+            const path = state.editStack.map(f => f.name).join(' \u203a ');
+            b.innerHTML = `<span>Editing module: <b>${escHtml(path)}</b></span><span style="opacity:.75;font-weight:500">PORT parts become the module's pins</span><button id="module-done" style="background:#fff;color:#0f766e;border-radius:999px;padding:4px 14px;font-weight:800">Done</button>`;
+            b.querySelector('#module-done').onclick = exitModule;
+        }
+        function enterModule(inst) {
+            hideContextMenu(); const def = modDef(inst); if (!def) return;
+            state.editStack.push({ defId: inst.params.def, name: modTitle(inst), parent: { components: state.components, wires: state.wires, transform: { ...state.transform } } });
+            state.components = cloneJ(def.comps); state.wires = cloneJ(def.wires); state.transform = { x: 0, y: 0, scale: 1 };
+            reloadCanvas(); updateTransform(); resetHistory(); updateModuleBanner(); setTimeout(() => { if (state.components.length) fitToCircuit(); }, 30);
+        }
+        function exitModule() {
+            const fr = state.editStack[state.editStack.length - 1]; if (!fr) return; const def = state.modules[fr.defId];
+            const comps = cloneJ(state.components), wires = cloneJ(state.wires);
+            const contains = (cs, seen) => cs.some(c => { if (c.type !== 'MODULE') return false; const d = (c.params || {}).def; if (d === fr.defId) return true; if (seen.has(d)) return false; seen.add(d); const dd = state.modules[d]; return !!dd && contains(dd.comps, seen); });
+            if (contains(comps, new Set())) { toast('A module cannot contain itself \u2014 remove the nested copy first.'); return; }
+            state.editStack.pop(); def.comps = comps; def.wires = wires;
+            state.components = fr.parent.components; state.wires = fr.parent.wires; state.transform = fr.parent.transform;
+            MOD.clones.clear(); MOD.wires.clear(); pruneModuleWires();
+            reloadCanvas(); updateTransform(); resetHistory(); updateModuleBanner();
+        }
+        function moduleFromSelection() {
+            hideContextMenu(); const cs = selComps().filter(c => c.type !== 'BOOKMARK'); if (!cs.length) return;
+            const S = new Set(cs.map(c => c.id)), inW = [], outW = [], inner = [];
+            state.wires.forEach(w => { const a = S.has(w.from.compId), b = S.has(w.to.compId); if (a && b) inner.push(w); else if (!a && b) inW.push(w); else if (a && !b) outW.push(w); });
+            const L = Math.min(...cs.map(c => c.x)), R = Math.max(...cs.map(c => c.x + compSizePx(c)[0])), T = Math.min(...cs.map(c => c.y)), Bm = Math.max(...cs.map(c => c.y + compSizePx(c)[1]));
+            const defComps = cs.map(cloneJ), defWires = inner.map(cloneJ), id = 'm' + (state.nextId++), name = 'Module ' + (Object.keys(state.modules).length + 1);
+            const mkPort = (type, x, y, nm) => { const p = { id: state.nextId++, type, x, y, value: 0, params: { name: nm } }; defComps.push(p); return p; };
+            const inGroups = new Map(), outGroups = new Map(); let ni = 0, no = 0;
+            inW.forEach(w => { const k = w.from.compId + ':' + (w.from.portIdx | 0); let g = inGroups.get(k); if (!g) { const pp = getPortPosition(w.to.compId, 'in', w.to.portIdx | 0); g = { from: w.from, port: mkPort('PORT_IN', L - 130, (pp ? pp.y : T) - 16, 'IN' + (++ni)) }; inGroups.set(k, g); }
+                defWires.push({ id: state.nextId++, from: { compId: g.port.id, portIdx: 0 }, to: cloneJ(w.to) }); });
+            outW.forEach(w => { const k = w.from.compId + ':' + (w.from.portIdx | 0); let g = outGroups.get(k); if (!g) { const pp = getPortPosition(w.from.compId, 'out', w.from.portIdx | 0); g = { port: mkPort('PORT_OUT', R + 70, (pp ? pp.y : T) - 16, 'OUT' + (++no)), dests: [] }; outGroups.set(k, g); defWires.push({ id: state.nextId++, from: cloneJ(w.from), to: { compId: g.port.id, portIdx: 0 } }); }
+                g.dests.push(w.to); });
+            state.modules[id] = { name, comps: defComps, wires: defWires };
+            const inst = makeComponent('MODULE', (L + R) / 2, (T + Bm) / 2); delete state.modules[inst.params.def]; inst.params.def = id;
+            const P = modPorts(state.modules[id]), newW = [];
+            inGroups.forEach(g => newW.push({ id: state.nextId++, from: cloneJ(g.from), to: { compId: inst.id, portIdx: P.ins.findIndex(p => p.id === g.port.id) } }));
+            outGroups.forEach(g => g.dests.forEach(d => newW.push({ id: state.nextId++, from: { compId: inst.id, portIdx: P.outs.findIndex(p => p.id === g.port.id) }, to: cloneJ(d) })));
+            state.components = state.components.filter(c => !S.has(c.id)); state.wires = state.wires.filter(w => !S.has(w.from.compId) && !S.has(w.to.compId)).concat(newW);
+            state.components.push(inst); reloadCanvas(); state.selection = [inst.id]; saveState(); toast(`Created ${name} (${P.ins.length} in, ${P.outs.length} out) \u2014 double-click it to edit`);
+        }
+        window.moduleFromSelection = moduleFromSelection; window.enterModuleById = (id) => { const c = state.components.find(x => x.id === id); if (c) enterModule(c); }; window.exitModule = exitModule;
+
+        // ================= logic analyzer =================
+        // 4 channels, one ring buffer each (4096 samples, outside the saved JSON). Sampled on a fixed grid of *simulation* time, so Run / Pause / Step / Speed
+        // all behave; the trace area is redrawn as SVG over the LCD of the artwork. The newest sample is at the right edge.
+        const SCOPE_DT = 0.02, SCOPE_N = 4096, SCOPE_COL = ['#ef476f', '#ffd166', '#06d6a0', '#4cc9f0'], SCOPE_BUF = new Map();
+        const scopeWin = (c) => Math.max(1, +((c.params || {}).window) || 8);
+        function scopeState(c) {
+            let s = SCOPE_BUF.get(c.id);
+            if (!s) { s = { ch: [0, 1, 2, 3].map(() => new Uint8Array(SCOPE_N)), n: 0, nextT: SIM.t, lastT: SIM.t, key: '' }; SCOPE_BUF.set(c.id, s); }
+            return s;
+        }
+        function scopeClear(c) { SCOPE_BUF.delete(c.id); refreshArt(c); }
+        function scopeSvg(c) {
+            const s = scopeState(c), W = scopeWin(c), X0 = 30, X1 = 170, span = Math.min(s.n, Math.round(W / SCOPE_DT)), v = c.value | 0;
+            let g = `<rect x="30" y="22" width="140" height="70" rx="3" fill="#0b0f15"/><clipPath id="scc${c.id}"><rect x="30" y="22" width="140" height="70"/></clipPath><g clip-path="url(#scc${c.id})">`;
+            for (let k = 1; k < 7; k++) g += `<line x1="${X0 + k * 20}" y1="22" x2="${X0 + k * 20}" y2="92" stroke="#fff" stroke-opacity=".07"/>`;
+            for (let ch = 0; ch < 4; ch++) {
+                const y = 31 + ch * 14, hi = y - 5, lo = y + 5, buf = s.ch[ch], pts = [];
+                g += `<line x1="${X0}" y1="${lo}" x2="${X1}" y2="${lo}" stroke="${SCOPE_COL[ch]}" stroke-opacity=".12"/>`;
+                const px = (n) => X1 - n * (X1 - X0) / (W / SCOPE_DT);                       // n = samples back from the newest
+                let prev = -1;
+                for (let k = span; k >= 1; k--) {                                  // oldest -> newest, keeping only the transitions
+                    const val = buf[((s.n - k) % SCOPE_N + SCOPE_N) % SCOPE_N], x = px(k - 1);
+                    if (val !== prev) { if (prev >= 0) pts.push(`${x.toFixed(1)},${prev ? hi : lo}`); pts.push(`${x.toFixed(1)},${val ? hi : lo}`); prev = val; }
+                }
+                const live = (v >> ch) & 1; if (prev >= 0 && live !== prev) pts.push(`${X1},${prev ? hi : lo}`, `${X1},${live ? hi : lo}`); else if (prev < 0) pts.push(`${X0},${live ? hi : lo}`);
+                pts.push(`${X1},${live ? hi : lo}`);
+                g += `<polyline points="${pts.join(' ')}" fill="none" stroke="${SCOPE_COL[ch]}" stroke-width="1.5" stroke-linejoin="round"/>`;
+            }
+            g += `</g><text x="168" y="90" font-family="${MONO}" font-size="5" text-anchor="end" fill="#8892a6">${W} s</text>`;
+            return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 104" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible">${g}</svg>`;
+        }
+        function scopeUpdate() {                                           // called after every simulation pass
+            const scopes = state.components.filter(c => c.type === 'SCOPE'); if (!scopes.length) return;
+            scopes.forEach(c => {
+                const s = scopeState(c); let changed = false;
+                if (SIM.t < s.lastT - 1e-9) { s.n = 0; s.nextT = SIM.t; changed = true; }            // the timeline was reset
+                s.lastT = SIM.t; const v = c.value | 0; let guard = 0;
+                while (s.nextT <= SIM.t && guard++ < SCOPE_N) { for (let ch = 0; ch < 4; ch++) s.ch[ch][s.n % SCOPE_N] = (v >> ch) & 1; s.n++; s.nextT += SCOPE_DT; changed = true; }
+                if (s.nextT < SIM.t - 5) s.nextT = SIM.t;
+                const key = s.n + ':' + v + ':' + scopeWin(c); if (changed || key !== s.key) { s.key = key; refreshArt(c); }
+            });
+        }
+        LIVE.scope = { type: 'SCOPE', gate: { inputs: 4, outputs: 0 }, def: { liveArt: true, size: () => [176, 104], defaults: { params: { window: 8 } },
+            pins: () => [0, 1, 2, 3].map(k => ({ kind: 'in', idx: k, x: 0, y: 31 + 14 * k, dir: [-1, 0] })),
+            params: [{ key: 'window', label: 'Time window (s)', type: 'enum', values: [2, 4, 8, 16, 32] }, { type: 'action', label: 'Clear traces', run: (c) => scopeClear(c) }],
+            render: (c, art) => { art.innerHTML = artImg('scope') + scopeSvg(c); } } };
+
         // ================= simulation timeline + CLOCK =================
         // The clock follows *simulation* time (not wall-clock): Run / Pause freeze it, Step jumps to the next clock edge, Speed scales it.
         const SIM = { running: true, speed: 1, t: 0, last: performance.now(), muted: false };
@@ -1249,7 +1493,8 @@
             const el = document.getElementById('comp-' + c.id), cur = el && el.querySelector('.clk-cur'); if (!cur) return;
             const x = (15 + 34 * clockPhase(c, SIM.t)).toFixed(2); cur.setAttribute('x1', x); cur.setAttribute('x2', x);
         }
-        function tickClocks() {
+        function tickClocks() { return withFlat(tickClocks0); }
+        function tickClocks0() {
             state.components.forEach(c => {
                 if (c.type !== 'CLOCK') return;
                 const v = clockLevel(c, SIM.t);
@@ -1261,7 +1506,8 @@
             if (SIM.running) SIM.t += dt * SIM.speed;
             tickClocks(); updateSimBar();
         }
-        function stepSim() {                                                // jump to the next clock edge: one edge per press
+        function stepSim() { return withFlat(stepSim0); }
+        function stepSim0() {                                                // jump to the next clock edge: one edge per press
             let best = Infinity;
             state.components.forEach(c => { if (c.type !== 'CLOCK') return; const f2 = clockHz(c) * 2, next = (Math.floor(SIM.t * f2 + 1e-9) + 1) / f2; if (next < best) best = next; });
             if (best === Infinity) { toast('Add a Clock to step through its edges'); return; }
@@ -1464,7 +1710,8 @@
             if (clkp >= 0) { const clk = a[clkp]; if (c.clk === undefined) c.clk = clk; rise = !!clk && !c.clk; c.clk = clk; }
             return S.outs(S.next(a, S.decode(c.value, c), rise, c), c, a);
         }
-        function resetSeq() {                                               // power-on state for every memory element
+        function resetSeq() { return withFlat(resetSeq0); }
+        function resetSeq0() {                                               // power-on state for every memory element
             state.components.forEach(c => { const S = SEQ_BY_TYPE[c.type]; if (!S) return; delete c.clk; c.value = S.outs(S.initSt(c), c, null); refreshArt(c); });
         }
         // state-table view: every stored bit of every connected memory element is a present-state variable and has a next-state output (most significant bit first)
@@ -1705,7 +1952,7 @@
             if (B) {                                                           // implemented: a real part sharing the preview's artwork and pin layout
                 B.nin = ni; B.nout = no; B.code = 20 + BLOCK_LIST.length; BLOCK_LIST.push(B); BLOCK_BY_TYPE[type] = B;
                 COMP_DEFS[type] = { name: p.name, cat: p.cat, custom: true, block: true, info: p, thumb: p.id, tile: p.name, size: () => [p.w, p.h], pins: () => pins,
-                    render: (c, art) => { art.innerHTML = artImg(p.id); } };
+                    render: (c, art) => { art.innerHTML = artImg(p.id); }, ...(B.def || {}) };
                 return;
             }
             ROLE[type] = 'preview';
@@ -1796,7 +2043,7 @@
         const state = {
             components: [], wires: [], selection: [],
             transform: { x: 0, y: 0, scale: 1 },
-            nextId: 1,
+            nextId: 1, modules: {}, editStack: [],
             mode: 'IDLE',
             dragStart: { x: 0, y: 0 },
             dragOffset: [],
@@ -1914,6 +2161,7 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
             DOM.canvasContainer.addEventListener('dblclick', (e) => {
                 const el = e.target.closest('.component'); if (!el) return;
                 const c = state.components.find(x => x.id === parseInt(el.dataset.id)); if (!c) return;
+                const dd = COMP_DEFS[c.type]; if (dd && dd.dblclick) { dd.dblclick(c); return; }
                 if (c.type === 'BOOKMARK') goBookmark(c.id);
                 else if (['NOTE', 'BANNER', 'FRAME'].includes(c.type)) { const f = document.querySelector('#props-panel [data-focus]'); if (f) { f.focus(); f.select && f.select(); } }
             });
@@ -1933,14 +2181,14 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
         // --- HISTORY & STATE ---
         function saveState() {
             if (historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
-            historyStack.push(JSON.stringify({ components: state.components, wires: state.wires, nextId: state.nextId }));
+            historyStack.push(JSON.stringify({ components: state.components, wires: state.wires, nextId: state.nextId, modules: state.modules }));
             if (historyStack.length > 20) historyStack.shift(); else historyIndex++;
             checkOffscreen();
         }
         function restoreState(json) {
             const data = JSON.parse(json);
             DOM.componentLayer.innerHTML = ''; DOM.wireLayer.innerHTML = '';
-            state.components = data.components; state.wires = data.wires; state.nextId = data.nextId; state.selection = [];
+            state.components = data.components; state.wires = data.wires; state.nextId = data.nextId; if (data.modules) state.modules = data.modules; MOD.clones.clear(); MOD.wires.clear(); state.selection = [];
             state.components.forEach(c => createComponentDOM(c));
             requestAnimationFrame(() => { renderWires(); simulateLogic(); updateLabels(); checkOffscreen(); updatePropsPanel(); });
         }
@@ -2526,7 +2774,8 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
             }
         }
 
-        function traceLogic(compId, depth, budget, outIdx) {
+        function traceLogic(compId, depth, budget, outIdx) { return withFlat(() => traceLogic0(compId, depth, budget, outIdx)); }
+        function traceLogic0(compId, depth, budget, outIdx) {
             budget = budget || { left: 6000 };             // shared sub-circuits expand exponentially: stop after a fixed amount of text
             if (--budget.left < 0) return "<span class='text-gray-400'>…</span>";
             if (depth > 20) return "<span class='text-red-500 font-bold'>...LOOP...</span>";
@@ -2552,7 +2801,7 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
             }
 
             if (SQ) return SQ.exs(inputs.map(v => v || "0"), qs, c)[+outIdx.slice(5) || 0];          // next-state equation of stored bit 'next:<weight>'
-            const blk = BLOCK_BY_TYPE[c.type]; if (blk) return blk.ex(inputs.map(v => v || "0"))[outIdx | 0] || "0";             // logic block: expression of the requested output pin
+            const blk = BLOCK_BY_TYPE[c.type]; if (blk) return blk.ex(inputs.map(v => v || "0"), c)[outIdx | 0] || "0";             // logic block: expression of the requested output pin
             if (c.type === 'BULB' || c.type === 'PROBE' || c.type === 'BUF' || c.type === 'JUNCTION' || c.type === 'BUZZER') return inputs[0] || "0";
             if (c.type === 'NOT') return `(NOT ${inputs[0] || "0"})`;
             const join = (op) => `(${inputs.map(v => v || "0").join(' ' + op + ' ')})`;           // 2 inputs: (A AND B); 3+: (A AND B AND C)
@@ -2670,7 +2919,8 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
         // - Without feedback loops: one pass in topological order (correct for ANY circuit depth).
         // - With feedback loops: every row is settled from a cleared state, same gate semantics as simulateLogic().
         // Several wires into one pin are OR-ed, an unwired pin reads 0 (identical to the canvas simulator).
-        function compileNetlist(inputComps, outputComps, only) {                      // `only`: optional Set of component ids; everything else is ignored
+        function compileNetlist(inputComps, outputComps, only) { return withFlat(() => compileNetlist0(inputComps, outputComps, only)); }
+        function compileNetlist0(inputComps, outputComps, only) {                      // `only`: optional Set of component ids; everything else is ignored
             const comps = only ? state.components.filter(c => only.has(c.id)) : state.components, N = comps.length, idx = new Map();
             comps.forEach((c, i) => idx.set(c.id, i));
             const src = comps.map(c => Array.from({ length: Math.max(2, inputCount(c)) }, () => [])), outsOf = comps.map(() => []), indeg = new Int32Array(N);
@@ -2698,7 +2948,7 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
             const getOut = (j) => outNext[j] >= 0 ? (nextOf(outIdx[j]) >> outNext[j]) & 1 : val[outIdx[j]];                    // an output is a node's value, or a memory element's next state
             const f = (t, v, i) => {                                                 // evaluate node i of kind t from the value array v (any number of input pins)
                 if (t >= 20) { const B = BLOCK_LIST[t - 20], a = []; for (let q = 0; q < B.nin; q++) a.push(pin(v, i, q));    // multi-output block: pack outputs into a bitmask
-                    const o = B.ev(a); let r = 0; for (let k = 0; k < o.length; k++) if (o[k]) r |= 1 << k; return r; }
+                    const o = B.ev(a, comps[i]); let r = 0; for (let k = 0; k < o.length; k++) if (o[k]) r |= 1 << k; return r; }
                 if (t === 3) return pin(v, i, 0) ? 0 : 1;
                 if (t >= 8) return pin(v, i, 0);                                     // BULB, BUF, PROBE, JUNCTION: pass pin 0 through
                 const and = t === 1 || t === 4, orr = t === 2 || t === 5; let r = and ? 1 : 0;
@@ -2938,7 +3188,8 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
         function closeModal() { document.getElementById('generic-modal').style.display = 'none'; }
 
         // --- LOGIC LOOP & HELPERS ---
-        function simulateLogic() {
+        function simulateLogic() { const r = withFlat(simulateLogic0); modVisuals(); return r; }
+        function simulateLogic0() {
             let changed = false; const ins = {}, cmap = new Map(state.components.map(c => [c.id, c]));
             state.components.forEach(c => ins[c.id] = new Array(Math.max(1, inputCount(c))).fill(0));
             state.wires.forEach(w => { const src = cmap.get(w.from.compId); if (src) { const ov = outBit(src, w.from.portIdx); if (w.value !== ov) { w.value = ov; changed = true; } } });         // what each drawn wire shows
@@ -2953,8 +3204,8 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
                     case 'OR': case 'NOR': { let r = 0; for (let k = 0; k < i.length; k++) r |= i[k]; nv = c.type === 'OR' ? r : 1 - r; break; }
                     case 'XOR': case 'XNOR': { let r = 0; for (let k = 0; k < i.length; k++) r ^= i[k]; nv = c.type === 'XOR' ? r : 1 - r; break; }
                     case 'BULB': case 'BUF': case 'JUNCTION': case 'PROBE': case 'BUZZER': nv = a; break;
-                    case 'LEDBAR': case 'SEG7RAW': { nv = 0; for (let k = 0; k < i.length; k++) if (i[k]) nv |= (1 << k); break; }   // one bit per input pin
-                    default: { const B = BLOCK_BY_TYPE[c.type], D = COMP_DEFS[c.type]; if (B) { const o = B.ev(i); nv = 0; for (let k = 0; k < o.length; k++) if (o[k]) nv |= (1 << k); } else if (SEQ_BY_TYPE[c.type]) { nv = seqStep(c, i); } else if (D && D.pack) { nv = 0; for (let k = 0; k < i.length; k++) nv = nv * 2 + (i[k] ? 1 : 0); } }   // display sinks: pin 0 = MSB
+                    case 'LEDBAR': case 'SEG7RAW': case 'SCOPE': case 'PORT_OUT': { nv = 0; for (let k = 0; k < i.length; k++) if (i[k]) nv |= (1 << k); break; }   // one bit per input pin
+                    default: { const B = BLOCK_BY_TYPE[c.type], D = COMP_DEFS[c.type]; if (B) { if (B.step && B.step(i, c)) refreshArt(c); const o = B.ev(i, c); nv = 0; for (let k = 0; k < o.length; k++) if (o[k]) nv |= (1 << k); if (c.type === 'TRISTATE') c.z = !i[1]; } else if (SEQ_BY_TYPE[c.type]) { nv = seqStep(c, i); } else if (D && D.pack) { nv = 0; for (let k = 0; k < i.length; k++) nv = nv * 2 + (i[k] ? 1 : 0); } }   // display sinks: pin 0 = MSB
                 }
                 if (c.value !== nv) { c.value = nv; changed = true; updateVisuals(c); }
             });
@@ -2983,12 +3234,30 @@ document.querySelectorAll('.node').forEach(el => {
     }
     h ? el.classList.add('high') : el.classList.remove('high');
 });
+triVisuals(); scopeUpdate();
 
         }
 
+        // Tri-state buses: a released driver (Z) is dimmed; two *enabled* drivers pushing 0 and 1 onto the same pin are contention (X) and glow red.
+        // A pin whose drivers are all released floats and reads 0 (pull-down).
+        function triVisuals() {
+            const tris = state.components.filter(c => c.type === 'TRISTATE'); if (!tris.length && !document.querySelector('.component.contend, .component.is-z')) return;
+            const by = new Map(), bad = new Set(), driving = (S) => S.type !== 'TRISTATE' || !S.z;
+            netWires().forEach(w => { const k = w.to.compId + ':' + w.to.portIdx; if (!by.has(k)) by.set(k, []); by.get(k).push(w.from); });
+            by.forEach((srcs) => {
+                const live = srcs.map(s => ({ s, c: byId(s.compId) })).filter(o => o.c && driving(o.c));
+                if (srcs.length > 1 && live.some(o => outBit(o.c, o.s.portIdx)) && live.some(o => !outBit(o.c, o.s.portIdx))) live.forEach(o => { if (o.c.type === 'TRISTATE') bad.add(o.c.id); });
+            });
+            tris.forEach(c => { c.contention = bad.has(c.id); });
+            document.querySelectorAll('.component').forEach(el => {
+                const c = byId(parseInt(el.dataset.id)); el.classList.toggle('is-z', !!(c && c.type === 'TRISTATE' && c.z)); el.classList.toggle('contend', !!(c && c.contention));
+            });
+        }
+
         function updateVisuals(c) {
+            if (!document.getElementById(`comp-${c.id}`)) return;
             if (c.type === 'BULB') document.getElementById(`bulb-img-${c.id}`).src = `images/bulb_${c.value ? 'on' : 'off'}.svg`;
-            else if (c.type === 'PROBE' || c.type === 'LEDBAR' || c.type === 'SEG7RAW') refreshArt(c);
+            else if (c.type === 'PROBE' || c.type === 'LEDBAR' || c.type === 'SEG7RAW' || (COMP_DEFS[c.type] || {}).liveArt) refreshArt(c);
             else if ((COMP_DEFS[c.type] || {}).sink) { const D = COMP_DEFS[c.type]; (D.gangArt ? gangOf(c, D.dock.axis) : [c]).forEach(refreshArt); if (c.type === 'BUZZER') buzzerEdge(c); }      // a number readout spans its whole docked row        // swap artwork / repaint LEDs and segments
         }
         function getPos(e) { const r = DOM.canvasContainer.getBoundingClientRect(); return { x: (e.clientX - r.left - state.transform.x) / state.transform.scale, y: (e.clientY - r.top - state.transform.y) / state.transform.scale }; }
@@ -3212,7 +3481,7 @@ document.querySelectorAll('.node').forEach(el => {
                     if (comps.some(c => c.dock)) h += ctxItem('unlink-2', 'Detach from neighbours', 'detachSelection()');
                     h += ctxItem('copy', 'Duplicate', 'duplicateSelection()') + ctxItem('unlink', 'Free Wires', 'freeWires()');
                 }
-                h += ctxSep + ctxItem('trash-2', 'Delete', 'deleteComponent()', 'menu-danger') + selectionSection();
+                h += ctxSep + ctxItem('box', 'Create module from selection', 'moduleFromSelection()') + ctxItem('trash-2', 'Delete', 'deleteComponent()', 'menu-danger') + selectionSection();
             }
             const m = DOM.contextMenu; m.innerHTML = ctxHead(title) + h; lucide.createIcons();
             m.style.display = 'block'; m.style.left = '0px'; m.style.top = '0px';
