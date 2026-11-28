@@ -152,7 +152,6 @@
         .wire-bus-label { font: 700 10px ui-monospace, Menlo, monospace; fill: #6b7280; text-anchor: middle; pointer-events: none; user-select: none; }
         .dock-hint { position: absolute; display: none; pointer-events: none; z-index: 60; background: #10b981; border-radius: 2px; box-shadow: 0 0 8px 2px rgba(16,185,129,.75); }
         .sw-hit { position: absolute; border-radius: 999px; cursor: pointer; pointer-events: auto; }
-        .pv-badge { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); font: 800 8px ui-monospace, monospace; letter-spacing: .8px; color: #92400e; background: #fde68a; border: 1px solid #f59e0b; padding: 0 5px; border-radius: 999px; white-space: nowrap; }
         .note-wrap { position: absolute; inset: 0; filter: drop-shadow(0 2px 3px rgba(0,0,0,.22)); }
         .note-card { position: absolute; inset: 0; border-radius: 6px; padding: 8px 12px 10px; overflow: hidden; box-sizing: border-box; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%); }
         .note-pin { position: absolute; top: 5px; left: 50%; margin-left: -6px; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff9fb0, #d1344e); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
@@ -175,8 +174,6 @@
         #props-panel .pp-sw { display: flex; gap: 6px; flex-wrap: wrap; } #props-panel .pp-sw button { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 0 0 1px #d1d5db; cursor: pointer; }
         #props-panel .pp-sw button.on { box-shadow: 0 0 0 2px #2563eb; }
         #props-panel .pp-btn { width: 100%; padding: 7px 10px; border-radius: 8px; background: #eff6ff; color: #2563eb; font-weight: 700; font-size: 12px; border: 1px solid #bfdbfe; cursor: pointer; } #props-panel .pp-btn:hover { background: #dbeafe; }
-        #props-panel .pp-info { font-size: 12px; color: #4b5563; line-height: 1.45; } #props-panel .pp-info b { color: #1f2937; } #props-panel .pp-info p { margin: 8px 0 0; }
-        #props-panel .pp-phase { display: inline-block; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font: 800 9px ui-monospace, monospace; letter-spacing: .6px; padding: 1px 7px; border-radius: 999px; margin-bottom: 6px; }
 
         /* --- APP STYLES --- */
         .grid-bg {
@@ -446,6 +443,7 @@
                     P</div>
                 <span>PlayGround</span>
             </div>
+            <div id="proj-chip-host" class="ml-5"></div>
         </div>
 
         <!-- TABS BAR (Centered & Floating over header) -->
@@ -925,11 +923,6 @@
             const cs = selComps(), hide = () => { box.classList.add('hidden'); ppKey = null; };
             if (state.selection.length !== 1 || cs.length !== 1) return hide();
             const c = cs[0], schema = paramSchema(c);
-            if (COMP_DEFS[c.type] && COMP_DEFS[c.type].preview) {                    // inert preview part: explain what it will do
-                const i = COMP_DEFS[c.type].info, k = 'pv|' + c.id; box.classList.remove('hidden'); if (k === ppKey) return; ppKey = k;
-                document.getElementById('pp-title').textContent = i.name;
-                document.getElementById('pp-body').innerHTML = `<div class="pp-info"><span class="pp-phase">PHASE ${i.phase}</span><b>Preview only: not simulated yet</b><p>${escHtml(i.desc)}</p><p><b>Planned behaviour</b><br>${escHtml(i.sim)}</p></div>`; return;
-            }
             if (!schema || !schema.length) return hide();
             const key = c.id + '|' + JSON.stringify(c.params || {}) + '|' + (c.type === 'CONST' || c.type === 'KEYPAD' ? c.value : '');
             box.classList.remove('hidden'); if (key === ppKey) return; ppKey = key;
@@ -1957,7 +1950,7 @@
             }
             ROLE[type] = 'preview';
             COMP_DEFS[type] = { name: p.name, cat: p.cat, custom: true, preview: true, info: p, thumb: p.id, tile: p.name, size: () => [p.w, p.h], pins: () => pins,
-                render: (c, art) => { art.innerHTML = artImg(p.id) + '<span class="pv-badge">PREVIEW</span>'; } };
+                render: (c, art) => { art.innerHTML = artImg(p.id); } };
         });
 
         // ---- inventory panel: every part, by category (collapsible) ----
@@ -1972,7 +1965,7 @@
             DOM.library.innerHTML = '';
             const head = document.createElement('div'); head.className = 'mb-3';
             head.innerHTML = `<button id="lib-showcase" class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700"><i data-lucide="layout-grid" class="w-4 h-4"></i> Show all on canvas</button>`
-                + `<div class="flex items-center gap-3 mt-2 text-[10px] text-gray-500"><span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-emerald-500"></i>works</span><span class="flex items-center gap-1"><i class="inline-block w-2 h-2 rounded-full bg-amber-400"></i>preview (not simulated yet)</span></div>`;
+;
             DOM.library.appendChild(head); head.querySelector('#lib-showcase').onclick = loadShowcase;
             LIB_CATS.forEach(cat => {
                 const items = libItems(cat); if (!items.length) return;
@@ -1984,12 +1977,12 @@
                 items.forEach(type => {
                     const d = COMP_DEFS[type], el = document.createElement('div'); el.className = 'relative flex flex-col items-center justify-center p-2 bg-white border border-gray-200 rounded hover:border-blue-400 cursor-grab select-none';
                     el.draggable = true; el.ondragstart = (e) => e.dataTransfer.setData('type', type);
-                    el.title = d && d.preview ? `${d.name}: preview only (planned for phase ${d.info.phase})` : (d ? d.name : type);
+                    el.title = d ? d.name : type;
                     let icon;
                     if (type === 'BULB') icon = `<img src="images/bulb_on.svg" class="w-10 h-10 object-contain mb-2">`;
                     else if (d) icon = `<img src="${asset(d.thumb)}" class="w-12 h-12 object-contain mb-1" draggable="false">`;
                     else icon = `<img src="images/${type.toLowerCase()}.svg" class="w-12 h-12 object-contain opacity-80 mb-1" draggable="false">`;
-                    el.innerHTML = `${icon}<span class="text-[10px] font-bold text-gray-600 text-center leading-tight">${d ? d.tile : type}</span>` + (d && d.preview ? `<i class="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-400"></i>` : `<i class="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500"></i>`);
+                    el.innerHTML = `${icon}<span class="text-[10px] font-bold text-gray-600 text-center leading-tight">${d ? d.tile : type}</span>`;
                     g.appendChild(el);
                 });
             });
@@ -2035,7 +2028,7 @@
             });
             created.forEach(c => { state.components.push(c); createComponentDOM(c); });
             state.selection = []; renderSelection(); updateLabels(); renderWires(); simulateLogic(); saveState(); fitToCircuit(false);
-            toast(`Showcase added: ${created.length} parts (${PREVIEW_PARTS.length} are previews)`);
+            toast(`Showcase added: ${created.length} parts`);
         }
 
 
@@ -2183,7 +2176,7 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
             if (historyIndex < historyStack.length - 1) historyStack.splice(historyIndex + 1);
             historyStack.push(JSON.stringify({ components: state.components, wires: state.wires, nextId: state.nextId, modules: state.modules }));
             if (historyStack.length > 20) historyStack.shift(); else historyIndex++;
-            checkOffscreen();
+            checkOffscreen(); if (typeof projSoon === 'function') projSoon();
         }
         function restoreState(json) {
             const data = JSON.parse(json);
@@ -2191,6 +2184,7 @@ document.querySelectorAll('input[name="view"]').forEach(radio => {
             state.components = data.components; state.wires = data.wires; state.nextId = data.nextId; if (data.modules) state.modules = data.modules; MOD.clones.clear(); MOD.wires.clear(); state.selection = [];
             state.components.forEach(c => createComponentDOM(c));
             requestAnimationFrame(() => { renderWires(); simulateLogic(); updateLabels(); checkOffscreen(); updatePropsPanel(); });
+            if (typeof projSoon === 'function') projSoon();
         }
         function undo() { if (historyIndex > 0) restoreState(historyStack[--historyIndex]); }
         function redo() { if (historyIndex < historyStack.length - 1) restoreState(historyStack[++historyIndex]); }
@@ -3645,7 +3639,255 @@ triVisuals(); scopeUpdate();
             return { onShow, onHide };
         })();
 
+        // ================= projects: autosave, manager, export / import =================
+        // A project is a full snapshot: every part with its state (switch values, params, RAM words, flip-flop state), wires, module definitions,
+        // the view (pan / zoom), wire style, selection-box mode and the simulation timeline (time, speed, mute). Projects live in localStorage
+        // (autosaved) and travel as `.nero.json` files. Scope traces are live data and are not stored.
+        const PROJ = { id: null, name: '', created: 0, lastJson: '', timer: null, savedAt: 0, err: false };
+        const PK = { index: 'nero.projects.v1', cur: 'nero.current.v1', item: (id) => 'nero.project.v1.' + id };
+        const PROJ_FORMAT = 1, PROJ_MAX_BYTES = 25 * 1024 * 1024;
+        const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+        const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } };
+        const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) { } };
+        const projIndex = () => { try { const a = JSON.parse(lsGet(PK.index) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+        const projUid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const projVolatile = new Set(['_label', '_color', '_addr', 'z', 'contention']);
+        const projReplacer = (k, v) => projVolatile.has(k) ? undefined : v;
+        const projCount = (p) => p.circuit.components.length + Object.values(p.circuit.modules || {}).reduce((n, d) => n + ((d && d.comps) || []).length, 0);
+
+        function snapshotProject() {
+            let comps = state.components, wires = state.wires, mods = state.modules, view = state.transform; const st = state.editStack;
+            if (st.length) {                                               // saving from inside a module: write every open working copy back into its definition
+                mods = { ...state.modules }; let work = { components: state.components, wires: state.wires };
+                for (let i = st.length - 1; i >= 0; i--) { mods[st[i].defId] = { ...mods[st[i].defId], comps: work.components, wires: work.wires }; work = st[i].parent; }
+                comps = work.components; wires = work.wires; view = st[0].parent.transform;
+            }
+            const sp = document.getElementById('sim-speed');
+            return { app: 'nero', format: PROJ_FORMAT, name: PROJ.name, created: PROJ.created, modified: Date.now(),
+                circuit: { components: comps, wires, nextId: state.nextId, modules: mods },
+                view: { x: view.x, y: view.y, scale: view.scale },
+                settings: { wireMode: state.wireMode, boxWireMode: state.boxWireMode, speed: SIM.speed, muted: !!SIM.muted },
+                sim: { t: SIM.t, running: !!SIM.running } };
+        }
+        function projWrite(p, id) {                                        // store one project + keep the index in step
+            const ok = lsSet(PK.item(id), JSON.stringify(p, projReplacer)); if (!ok) return false;
+            const idx = projIndex().filter(e => e.id !== id); idx.push({ id, name: p.name, modified: p.modified, created: p.created, parts: projCount(p) });
+            return lsSet(PK.index, JSON.stringify(idx));
+        }
+        function projAutosave(force) {
+            if (!PROJ.id) return; const p = snapshotProject(); p.modified = 0; const json = JSON.stringify(p, projReplacer);
+            if (!force && json === PROJ.lastJson) return;
+            p.modified = Date.now(); const ok = projWrite(p, PROJ.id); PROJ.err = !ok;
+            if (ok) { PROJ.lastJson = json; PROJ.savedAt = p.modified; } else if (force) toast('Browser storage is full \u2014 export this project to a file.');
+            projUpdateChip();
+        }
+        function projSoon() { if (!PROJ.id) return; clearTimeout(PROJ.timer); PROJ.timer = setTimeout(() => projAutosave(false), 500); }
+
+        // ---- validation: never trust a file; drop what the app cannot load and say how much ----
+        const knownType = (t) => typeof t === 'string' && !!(COMP_DEFS[t] || GATE_TYPES[t]);
+        function sanitizeCircuit(c, warn) {
+            const ids = new Set(), comps = [];
+            (Array.isArray(c && c.components) ? c.components : c && c.comps || []).forEach(x => {
+                if (!x || typeof x !== 'object' || !knownType(x.type) || !Number.isFinite(x.id) || ids.has(x.id)) { warn.dropped++; return; }
+                x.x = Number.isFinite(+x.x) ? +x.x : 0; x.y = Number.isFinite(+x.y) ? +x.y : 0; if (x.params && typeof x.params !== 'object') delete x.params; ids.add(x.id); comps.push(x);
+            });
+            const wsrc = Array.isArray(c && c.wires) ? c.wires : [], seen = new Set();
+            const wires = wsrc.filter(w => { const ok = w && w.from && w.to && Number.isFinite(w.id) && !seen.has(w.id) && ids.has(w.from.compId) && ids.has(w.to.compId); if (ok) seen.add(w.id); else warn.dropped++; return ok; });
+            return { comps, wires };
+        }
+        function validateProject(o, fallbackName) {
+            if (!o || typeof o !== 'object') throw new Error('This is not a Nero project file.');
+            const legacy = Array.isArray(o.components) && Array.isArray(o.wires);                  // a bare circuit (history format) is accepted too
+            if (!legacy && o.app !== 'nero') throw new Error('This is not a Nero project file.');
+            if (o.format > PROJ_FORMAT) throw new Error('This project was made with a newer version of Nero.');
+            const src = legacy ? o : o.circuit; if (!src || !Array.isArray(src.components)) throw new Error('The project has no circuit.');
+            const warn = { dropped: 0 }, main = sanitizeCircuit(src, warn), modules = {};
+            Object.entries(src.modules || {}).forEach(([id, d]) => { if (d && typeof d === 'object') { const s = sanitizeCircuit(d, warn); modules[id] = { name: String(d.name || 'Module'), comps: s.comps, wires: s.wires }; } });
+            let maxId = 0; const bump = (a) => a.forEach(x => { if (x.id > maxId) maxId = x.id; });
+            bump(main.comps); bump(main.wires); Object.values(modules).forEach(d => { bump(d.comps); bump(d.wires); });
+            const v = (!legacy && o.view) || {}, s = (!legacy && o.settings) || {}, m = (!legacy && o.sim) || {};
+            const num = (x, d) => Number.isFinite(+x) ? +x : d;
+            return { warn: warn.dropped, project: { app: 'nero', format: PROJ_FORMAT, name: String(o.name || fallbackName || 'Imported project').slice(0, 80), created: num(o.created, Date.now()), modified: Date.now(),
+                circuit: { components: main.comps, wires: main.wires, nextId: Math.max(num(src.nextId, 1), maxId + 1), modules },
+                view: { x: num(v.x, 0), y: num(v.y, 0), scale: Math.min(4, Math.max(0.1, num(v.scale, 1))) },
+                settings: { wireMode: s.wireMode === 'ORTHO' ? 'ORTHO' : 'CURVE', boxWireMode: ['NONE', 'INSIDE', 'TOUCH', 'LINKED'].includes(s.boxWireMode) ? s.boxWireMode : 'NONE', speed: [0.25, 0.5, 1, 2, 4].includes(+s.speed) ? +s.speed : 1, muted: !!s.muted },
+                sim: { t: Math.max(0, num(m.t, 0)), running: m.running !== false } } };
+        }
+
+        // ---- apply a project to the live app ----
+        function applyProject(p) {
+            state.editStack = []; updateModuleBanner();
+            state.components = p.circuit.components; state.wires = p.circuit.wires; state.nextId = p.circuit.nextId; state.modules = p.circuit.modules || {};
+            MOD.clones.clear(); MOD.wires.clear(); MOD.last = null; SCOPE_BUF.clear();
+            state.transform = { ...p.view };
+            if (state.wireMode !== p.settings.wireMode) toggleWireMode();
+            state.boxWireMode = p.settings.boxWireMode;
+            SIM.t = p.sim.t; SIM.running = p.sim.running; SIM.speed = p.settings.speed; SIM.muted = p.settings.muted; SIM.last = performance.now();
+            const sp = document.getElementById('sim-speed'); if (sp) sp.value = String(SIM.speed);
+            reloadCanvas(); updateTransform(); resetHistory(); updateSimBar(); checkOffscreen();
+        }
+        function projSwitch(id, data) {                                    // make `id` the current project
+            PROJ.id = id; PROJ.name = data.name; PROJ.created = data.created; lsSet(PK.cur, id);
+            applyProject(data); PROJ.lastJson = ''; projAutosave(true); projUpdateChip();
+        }
+        function projLoadStored(id) {
+            const raw = lsGet(PK.item(id)); if (!raw) throw new Error('That project is missing from browser storage.');
+            return validateProject(JSON.parse(raw), 'Project');
+        }
+        function projNew(name) {
+            projAutosave(true); const id = projUid(), now = Date.now();
+            projSwitch(id, validateProject({ app: 'nero', format: PROJ_FORMAT, name: name || projUniqueName('Untitled project'), created: now, circuit: { components: [], wires: [], nextId: 1, modules: {} } }).project);
+            toast('New project');
+        }
+        function projUniqueName(base) { const names = new Set(projIndex().map(e => e.name)); if (!names.has(base)) return base; let n = 2; while (names.has(`${base} ${n}`)) n++; return `${base} ${n}`; }
+        function projOpen(id) {
+            if (id === PROJ.id) return; let r; try { r = projLoadStored(id); } catch (e) { toast(e.message); return; }
+            projAutosave(true); projSwitch(id, r.project); toast(`Opened \u201c${r.project.name}\u201d` + (r.warn ? ` \u2014 ${r.warn} unsupported item(s) skipped` : ''));
+        }
+        function projSaveCopy(name) {
+            projAutosave(true); const p = snapshotProject(); p.name = name; p.created = Date.now(); const id = projUid();
+            if (!projWrite(p, id)) { toast('Browser storage is full \u2014 export this project to a file.'); return; }
+            projOpen(id); toast(`Saved a copy as \u201c${name}\u201d`);
+        }
+        function projDuplicate(id) {
+            let r; try { if (id === PROJ.id) projAutosave(true); r = projLoadStored(id); } catch (e) { toast(e.message); return; }
+            const p = r.project, nid = projUid(); p.name = projUniqueName(p.name + ' copy'); p.created = Date.now();
+            if (!projWrite(p, nid)) toast('Browser storage is full.'); else toast(`Duplicated as \u201c${p.name}\u201d`); projManagerRefresh();
+        }
+        function projRename(id, name) {
+            name = (name || '').trim().slice(0, 80); if (!name) return;
+            if (id === PROJ.id) { PROJ.name = name; projAutosave(true); } else { try { const r = projLoadStored(id); r.project.name = name; projWrite(r.project, id); } catch (e) { toast(e.message); } }
+            projUpdateChip(); projManagerRefresh();
+        }
+        function projDelete(id) {
+            const idx = projIndex(); lsDel(PK.item(id)); lsSet(PK.index, JSON.stringify(idx.filter(e => e.id !== id)));
+            if (id === PROJ.id) { const rest = projIndex().sort((a, b) => b.modified - a.modified); PROJ.id = null; if (rest.length) { const r = projLoadStored(rest[0].id); projSwitch(rest[0].id, r.project); } else projNew('Untitled project'); }
+            projManagerRefresh(); projUpdateChip();
+        }
+
+        // ---- files ----
+        const projSlug = (s) => (s || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+        function download(name, text) {
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; document.body.appendChild(a); a.click();
+            setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+        }
+        function projExport(id) {
+            let p; try { if (id === PROJ.id) { projAutosave(true); p = snapshotProject(); } else p = projLoadStored(id).project; } catch (e) { toast(e.message); return; }
+            download(projSlug(p.name) + '.nero.json', JSON.stringify(p, projReplacer, 1)); toast(`Exported \u201c${p.name}\u201d`);
+        }
+        function projExportAll() {
+            projAutosave(true); const list = projIndex().map(e => { try { return projLoadStored(e.id).project; } catch (x) { return null; } }).filter(Boolean);
+            download('nero-projects.nero.json', JSON.stringify({ app: 'nero', format: PROJ_FORMAT, bundle: true, projects: list }, projReplacer, 1)); toast(`Exported ${list.length} project(s)`);
+        }
+        function projImportText(text, fname) {                             // always creates new projects: an import never overwrites anything
+            if (text.length > PROJ_MAX_BYTES) { toast('File is too large to import.'); return false; }
+            let o; try { o = JSON.parse(text); } catch (e) { toast('That file is not valid JSON.'); return false; }
+            const items = o && o.bundle && Array.isArray(o.projects) ? o.projects : [o]; let last = null, skipped = 0, n = 0;
+            projAutosave(true);
+            for (const it of items) {
+                let r; try { r = validateProject(it, (fname || '').replace(/\.nero\.json$|\.json$|\.nero$/i, '')); } catch (e) { toast(e.message); continue; }
+                const p = r.project, id = projUid(); p.name = projUniqueName(p.name); p.created = Date.now(); skipped += r.warn;
+                if (!projWrite(p, id)) { toast('Browser storage is full \u2014 delete a project first.'); break; } last = id; n++;
+            }
+            if (last) { projOpen(last); toast(`Imported ${n} project(s)` + (skipped ? ` \u2014 ${skipped} unsupported item(s) skipped` : '')); }
+            projManagerRefresh(); return !!last;
+        }
+        function projImportPick() {
+            const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,.nero,application/json'; inp.multiple = true;
+            inp.onchange = () => [...inp.files].forEach(f => f.text().then(t => projImportText(t, f.name))); inp.click();
+        }
+
+        // ---- UI ----
+        function askText(title, value, ok, okLabel) {
+            const old = document.getElementById('ask-text'); if (old) old.remove();
+            const ov = document.createElement('div'); ov.id = 'ask-text'; ov.className = 'fixed inset-0 z-[70] flex items-center justify-center'; ov.style.background = 'rgba(0,0,0,.4)';
+            ov.innerHTML = `<div class="bg-white rounded-xl shadow-2xl p-5 w-[340px]"><div class="font-bold text-gray-800 mb-3">${escHtml(title)}</div><input class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500" maxlength="80"><div class="flex justify-end gap-2 mt-4"><button data-x="c" class="px-3 py-1.5 text-sm rounded border border-gray-300 hover:bg-gray-100">Cancel</button><button data-x="o" class="px-4 py-1.5 text-sm font-bold rounded bg-blue-600 text-white hover:bg-blue-700">${escHtml(okLabel || 'OK')}</button></div></div>`;
+            const inp = ov.querySelector('input'); inp.value = value || ''; const done = (v) => { ov.remove(); if (v !== null && v.trim()) ok(v.trim()); };
+            ov.querySelector('[data-x=c]').onclick = () => done(null); ov.querySelector('[data-x=o]').onclick = () => done(inp.value);
+            inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(inp.value); if (e.key === 'Escape') done(null); };
+            ov.onmousedown = (e) => { if (e.target === ov) done(null); }; document.body.appendChild(ov); inp.focus(); inp.select();
+        }
+        const projFmt = (t) => { try { return new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
+        function projUpdateChip() {
+            const n = document.getElementById('proj-name'), s = document.getElementById('proj-status'); if (!n) return;
+            n.textContent = PROJ.name || 'Project'; s.textContent = PROJ.err ? 'not saved \u2014 storage full' : PROJ.savedAt ? 'autosaved ' + new Date(PROJ.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            s.style.color = PROJ.err ? '#dc2626' : '';
+        }
+        function projMenu(open) {
+            let m = document.getElementById('proj-menu'); if (m) m.remove(); if (open === false) return;
+            const chip = document.getElementById('proj-chip'); if (!chip) return; const r = chip.getBoundingClientRect();
+            m = document.createElement('div'); m.id = 'proj-menu'; m.style.cssText = `position:fixed;left:${r.left}px;top:${r.bottom + 6}px;z-index:60;min-width:240px`;
+            m.className = 'bg-white border border-gray-200 rounded-xl shadow-2xl py-1 text-sm';
+            const it = (id, ic, label, key) => `<button data-a="${id}" class="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 text-left"><i data-lucide="${ic}" class="w-4 h-4 text-gray-500"></i><span class="flex-1">${label}</span><span class="text-[10px] text-gray-400 font-mono">${key || ''}</span></button>`;
+            m.innerHTML = it('new', 'file-plus', 'New project') + it('open', 'folder-open', 'Open projects\u2026', 'Ctrl+O') + '<div class="h-px bg-gray-200 my-1"></div>' + it('save', 'save', 'Save now', 'Ctrl+S') + it('copy', 'copy', 'Save a copy\u2026', 'Ctrl+Shift+S') + it('rename', 'pencil', 'Rename\u2026')
+                + '<div class="h-px bg-gray-200 my-1"></div>' + it('export', 'download', 'Export to file (.nero.json)') + it('import', 'upload', 'Import from file\u2026');
+            document.body.appendChild(m); lucide.createIcons();
+            m.onclick = (e) => { const b = e.target.closest('[data-a]'); if (!b) return; projMenu(false); const a = b.dataset.a;
+                if (a === 'new') askText('New project', projUniqueName('Untitled project'), projNew, 'Create'); else if (a === 'open') openProjectManager();
+                else if (a === 'save') { projAutosave(true); toast('Project saved'); } else if (a === 'copy') askText('Save a copy as', projUniqueName(PROJ.name + ' copy'), projSaveCopy, 'Save');
+                else if (a === 'rename') askText('Rename project', PROJ.name, (v) => projRename(PROJ.id, v), 'Rename'); else if (a === 'export') projExport(PROJ.id); else if (a === 'import') projImportPick(); };
+            setTimeout(() => document.addEventListener('mousedown', function h(e) { if (!m.contains(e.target) && !chip.contains(e.target)) { m.remove(); } document.removeEventListener('mousedown', h); }), 0);
+        }
+        function projManagerRefresh() {
+            const box = document.getElementById('proj-manager-list'); if (!box) return;
+            const list = projIndex().sort((a, b) => b.modified - a.modified);
+            box.innerHTML = list.length ? list.map(e => `<div class="flex items-center gap-3 px-3 py-2.5 rounded-lg border ${e.id === PROJ.id ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}" data-id="${e.id}">`
+                + `<i data-lucide="${e.id === PROJ.id ? 'folder-open' : 'folder'}" class="w-5 h-5 ${e.id === PROJ.id ? 'text-blue-600' : 'text-gray-400'}"></i>`
+                + `<div class="flex-1 min-w-0"><div class="font-bold text-gray-800 truncate">${escHtml(e.name)}${e.id === PROJ.id ? ' <span class="text-[10px] font-bold text-blue-600 ml-1">OPEN</span>' : ''}</div><div class="text-xs text-gray-400">${e.parts} part${e.parts === 1 ? '' : 's'} \u00b7 ${projFmt(e.modified)}</div></div>`
+                + (e.id === PROJ.id ? '' : `<button data-act="open" class="px-2.5 py-1 text-xs font-bold rounded bg-blue-600 text-white hover:bg-blue-700">Open</button>`)
+                + `<button data-act="rename" title="Rename" class="p-1.5 rounded hover:bg-gray-200"><i data-lucide="pencil" class="w-4 h-4 text-gray-500"></i></button><button data-act="dup" title="Duplicate" class="p-1.5 rounded hover:bg-gray-200"><i data-lucide="copy" class="w-4 h-4 text-gray-500"></i></button>`
+                + `<button data-act="export" title="Export" class="p-1.5 rounded hover:bg-gray-200"><i data-lucide="download" class="w-4 h-4 text-gray-500"></i></button><button data-act="del" title="Delete" class="p-1.5 rounded hover:bg-red-100"><i data-lucide="trash-2" class="w-4 h-4 text-red-500"></i></button></div>`).join('')
+                : '<div class="text-center text-gray-400 py-8 text-sm">No projects yet.</div>';
+            lucide.createIcons();
+        }
+        function openProjectManager() {
+            const old = document.getElementById('proj-manager'); if (old) old.remove(); projAutosave(true);
+            const ov = document.createElement('div'); ov.id = 'proj-manager'; ov.className = 'fixed inset-0 z-[65] flex items-center justify-center'; ov.style.background = 'rgba(0,0,0,.4)';
+            ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-[560px] max-w-[94vw] max-h-[80vh] flex flex-col"><div class="flex items-center gap-2 px-5 pt-4 pb-3 border-b border-gray-200"><b class="text-lg text-gray-800 flex-1">Projects</b>`
+                + `<button data-t="new" class="px-3 py-1.5 text-xs font-bold rounded bg-blue-600 text-white hover:bg-blue-700">New</button><button data-t="import" class="px-3 py-1.5 text-xs font-bold rounded border border-gray-300 hover:bg-gray-100">Import\u2026</button><button data-t="all" class="px-3 py-1.5 text-xs font-bold rounded border border-gray-300 hover:bg-gray-100">Export all</button><button data-t="close" class="p-1.5 rounded hover:bg-gray-100 ml-1"><i data-lucide="x" class="w-4 h-4"></i></button></div>`
+                + `<div id="proj-manager-list" class="flex-1 overflow-y-auto p-4 space-y-2"></div><div class="px-5 py-2.5 border-t border-gray-200 text-[11px] text-gray-400">Projects autosave in this browser. Export to a file to back up or share \u2014 you can also drop a <b>.nero.json</b> file anywhere on the page.</div></div>`;
+            const esc = (e) => { if (e.key === 'Escape' && !document.getElementById('ask-text')) close(); };
+            const close = () => { window.removeEventListener('keydown', esc, true); ov.remove(); };
+            window.addEventListener('keydown', esc, true);
+            ['keydown', 'keyup'].forEach(k => ov.addEventListener(k, e => e.stopPropagation()));
+            ov.onmousedown = (e) => { if (e.target === ov) close(); };
+            ov.onclick = (e) => {
+                const t = e.target.closest('[data-t]'); if (t) { const a = t.dataset.t; if (a === 'close') close(); else if (a === 'import') projImportPick(); else if (a === 'all') projExportAll(); else if (a === 'new') askText('New project', projUniqueName('Untitled project'), (v) => { projNew(v); projManagerRefresh(); }, 'Create'); return; }
+                const b = e.target.closest('[data-act]'); if (!b) return; const row = b.closest('[data-id]'), id = row.dataset.id, a = b.dataset.act;
+                if (a === 'open') { projOpen(id); close(); } else if (a === 'dup') projDuplicate(id); else if (a === 'export') projExport(id);
+                else if (a === 'rename') askText('Rename project', (projIndex().find(x => x.id === id) || {}).name, (v) => projRename(id, v), 'Rename');
+                else if (a === 'del') { if (b.dataset.armed) projDelete(id); else { b.dataset.armed = '1'; b.innerHTML = '<span class="text-xs font-bold text-red-600 px-1">Delete?</span>'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4 text-red-500"></i>'; lucide.createIcons(); } }, 2500); } }
+            };
+            document.body.appendChild(ov); lucide.createIcons(); projManagerRefresh();
+        }
+        function projBuildChip() {
+            const host = document.getElementById('proj-chip-host'); if (!host) return;
+            host.innerHTML = `<button id="proj-chip" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 text-left max-w-[260px]" title="Projects"><i data-lucide="folder-open" class="w-4 h-4 text-blue-600 flex-shrink-0"></i><span class="min-w-0"><span id="proj-name" class="block text-xs font-bold text-gray-800 truncate leading-tight"></span><span id="proj-status" class="block text-[10px] text-gray-400 leading-tight"></span></span><i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i></button>`;
+            host.querySelector('#proj-chip').onclick = () => { document.getElementById('proj-menu') ? projMenu(false) : projMenu(true); };
+            lucide.createIcons();
+        }
+        function projInit() {
+            projBuildChip();
+            const cur = lsGet(PK.cur), idx = projIndex().sort((a, b) => b.modified - a.modified); let id = null, r = null;
+            for (const cand of [cur, ...idx.map(e => e.id)]) { if (!cand || !lsGet(PK.item(cand))) continue; try { r = projLoadStored(cand); id = cand; break; } catch (e) { } }
+            if (id) { PROJ.id = id; PROJ.name = r.project.name; PROJ.created = r.project.created; lsSet(PK.cur, id); applyProject(r.project); PROJ.lastJson = ''; projAutosave(true); if (r.warn) toast(`${r.warn} unsupported item(s) skipped`); }
+            else { PROJ.id = projUid(); PROJ.name = 'Untitled project'; PROJ.created = Date.now(); lsSet(PK.cur, PROJ.id); projAutosave(true); }       // first run: the canvas as it is becomes project #1
+            projUpdateChip();
+            setInterval(() => projAutosave(false), 5000);
+            document.addEventListener('visibilitychange', () => { if (document.hidden) projAutosave(false); }); window.addEventListener('beforeunload', () => projAutosave(false));
+            window.addEventListener('keydown', (e) => {
+                const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(); if (!mod) return;
+                if (k === 's') { e.preventDefault(); if (e.shiftKey) askText('Save a copy as', projUniqueName(PROJ.name + ' copy'), projSaveCopy, 'Save'); else { projAutosave(true); toast('Project saved'); } }
+                else if (k === 'o') { e.preventDefault(); openProjectManager(); }
+            }, true);
+            const hasFiles = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+            window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+            window.addEventListener('drop', (e) => { if (!hasFiles(e)) return; e.preventDefault(); [...e.dataTransfer.files].forEach(f => f.text().then(t => projImportText(t, f.name))); });
+        }
+        window.openProjectManager = openProjectManager;
+
         init();
+        projInit();
     </script>
 </body>
 
